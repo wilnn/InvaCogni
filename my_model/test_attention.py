@@ -1,9 +1,9 @@
-from modeling_mymodel import MyModelCrossAttention, MyModelCrossAttention2
+from modeling_mymodel import MyModelCrossAttention
 
 import torch
 class config:
     def __init__(self, num_heads, hidden_size):
-        self.num_heads = num_heads
+        self.num_attention_heads = num_heads
         self.hidden_size = hidden_size
         
 # Shape (e.g., 3x4 tensor)
