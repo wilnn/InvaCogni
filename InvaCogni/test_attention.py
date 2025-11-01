@@ -1,4 +1,4 @@
-from modeling_mymodel import MyModelCrossAttention
+from mymodel.InvaCogni.modeling_invacogni import InvaCogniCrossAttention
 
 import torch
 class config:
@@ -15,7 +15,7 @@ q_mask = torch.tensor([[1], [1]], dtype=torch.bool)
 
 c = config(2, 4)
 #model = MyModelCrossAttention(c)
-model = MyModelCrossAttention(c)
+model = InvaCogniCrossAttention(c)
 print("do attention")
 #out = model(img, t, k_mask, q_mask)
 #print(out)

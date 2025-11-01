@@ -1,6 +1,6 @@
-from modeling_mymodel import MyModel
-from configuration_mymodel import MyModelConfig
-from processing_mymodel import MyModelProcessor
+from mymodel.InvaCogni.modeling_invacogni import InvaCogni
+from mymodel.InvaCogni.configuration_invacogni import MyModelConfig
+from mymodel.InvaCogni.processing_invacogni import MyModelProcessor
 from transformers import RobertaTokenizer, RobertaModel
 
 from PIL import Image
@@ -38,7 +38,7 @@ processor = MyModelProcessor(feature_extractor=feature_extractor,
 
 config = MyModelConfig()
 
-model = MyModel(config,
+model = InvaCogni(config,
                 vision_encoder=vision_encoder,
                 text_encoder=text_encoder,
                 audio_encoder=audio_encoder,
@@ -57,6 +57,7 @@ total_gb = total_bytes / (1024 ** 3)
 print(total_gb)
 exit(0)
 '''
+
 
 
 url = "./image.png"
