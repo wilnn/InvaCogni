@@ -19,7 +19,7 @@ class GradReverse(torch.autograd.Function):
         return (-ctx.grl_lambda)*grad_output, None
     
 
-class GRL(nn.Module):
+class InvaCogniGRL(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.grl_lambda = config.grl_lambda
@@ -28,7 +28,7 @@ class GRL(nn.Module):
         # Use the custom autograd function
         return GradReverse.apply(x, self.grl_lambda)
     
-class MyModelVisionEncoder(nn.Module):
+class InvaCogniVisionEncoder(nn.Module):
     def __init__(self, config, vision_encoder=None):
         super().__init__()
         if vision_encoder:
@@ -40,7 +40,7 @@ class MyModelVisionEncoder(nn.Module):
     def forward(self, pixel_values, **kwargs):
         return self.vision_encoder(pixel_values, **kwargs)
 
-class MyModelTextEncoder(nn.Module):
+class InvaCogniTextEncoder(nn.Module):
     def __init__(self, config, text_encoder=None):
         super().__init__()
         if text_encoder:
@@ -58,7 +58,7 @@ class MyModelTextEncoder(nn.Module):
                                  attention_mask=attention_mask,
                                  **kwargs,)
     
-class MyModelAudioEncoder(nn.Module):
+class InvacogniAudioEncoder(nn.Module):
     def __init__(self, config, audio_encoder=None):
         super().__init__()
         if audio_encoder:
@@ -72,7 +72,7 @@ class MyModelAudioEncoder(nn.Module):
                                   return_dict=return_dict, **kwargs)
 
 
-class MyModelFFN(nn.Module):
+class InvaCogniFFN(nn.Module):
     def __init__(self, config, dims_per_layer: list[list], last_act=True):
         super().__init__()
 
@@ -162,7 +162,7 @@ class MyModelCrossAttention2(nn.Module):
         return self.out_proj(attn_out)
 '''
 
-class MyModelCrossAttention(nn.Module):
+class InvaCogniCrossAttention(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.embed_dim = config.hidden_size
@@ -197,33 +197,33 @@ class MyModelCrossAttention(nn.Module):
             return attn_output
 
 @dataclass
-class MyModelClassifierOutput(SequenceClassifierOutput):
+class InvaCogniClassifierOutput(SequenceClassifierOutput):
     # use Optional[...] so it's backward-compatible when field is not present
     dc_logits: Optional[torch.Tensor] = None
     dc_loss: Optional[torch.Tensor] = None
     tc_loss: Optional[torch.Tensor] = None
 
-class MyModel(nn.Module):
+class InvaCogni(nn.Module):
     def __init__(self, config, vision_encoder=None, text_encoder=None,
                  audio_encoder=None):
         super().__init__()
         self.config = config # if use PretrainedMoDel as parent class then
                             # don't have to do this
 
-        self.GRL = GRL(config)
-        self.vision_encoder = MyModelVisionEncoder(config, vision_encoder)
-        self.text_encoder = MyModelTextEncoder(config, text_encoder)
-        self.audio_encoder = MyModelAudioEncoder(config, audio_encoder)
+        self.GRL = InvaCogniGRL(config)
+        self.vision_encoder = InvaCogniVisionEncoder(config, vision_encoder)
+        self.text_encoder = InvaCogniTextEncoder(config, text_encoder)
+        self.audio_encoder = InvacogniAudioEncoder(config, audio_encoder)
 
 
-        self.audio_FFN = MyModelFFN(config, config.audio_FFN)
+        self.audio_FFN = InvaCogniFFN(config, config.audio_FFN)
 
-        self.domain_classifier = MyModelFFN(config, config.domain_classifier_FFN)
-        self.task_classifier = MyModelFFN(config, config.task_classifier_FFN)
+        self.domain_classifier = InvaCogniFFN(config, config.domain_classifier_FFN)
+        self.task_classifier = InvaCogniFFN(config, config.task_classifier_FFN)
         
-        self.cross_attn = MyModelCrossAttention(config)
+        self.cross_attn = InvaCogniCrossAttention(config)
         self.cross_attn_layer_norm = nn.LayerNorm(normalized_shape=config.hidden_size)
-        self.cross_attn_FFN = MyModelFFN(config, config.cross_attn_FFN)
+        self.cross_attn_FFN = InvaCogniFFN(config, config.cross_attn_FFN)
         self.cross_attn_FFN_layer_norm = nn.LayerNorm(normalized_shape=config.hidden_size)
         #self.self_attn = MyModelSelfAttention(config)
         #self.self_attn_layer_norm = nn.LayerNorm(normalized_shape=config.hidden_size)
@@ -358,7 +358,7 @@ class MyModel(nn.Module):
             output = (tc_logits, dc_logits)
             return ((total_loss,) + output) if total_loss is not None else output
 
-        return MyModelClassifierOutput(
+        return InvaCogniClassifierOutput(
             loss=total_loss,
             logits=tc_logits,
             #hidden_states=None,
