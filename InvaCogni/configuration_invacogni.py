@@ -5,8 +5,8 @@ from typing import Any, List
 import ast
 
 
-class MyModelConfig(PretrainedConfig):
-    model_type = "Mymodel" # Must be different from existing model types
+class InvaCogniConfig(PretrainedConfig):
+    model_type = "InvaCogni" # Must be different from existing model types
     def __init__(self, loss_lambda=0.5,
                  hidden_act="gelu",
                  hidden_size=768,

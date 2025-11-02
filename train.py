@@ -4,9 +4,9 @@ from sklearn.model_selection import StratifiedKFold
 from transformers import HfArgumentParser
 from train_args import trainArgs
 
-from my_model.modeling_mymodel import MyModel
-from my_model.configuration_mymodel import MyModelConfig
-from my_model.processing_mymodel import MyModelProcessor
+from InvaCogni.modeling_invacogni import InvaCogni
+from InvaCogni.configuration_invacogni import InvaCogniConfig
+from InvaCogni.processing_invacogni import InvaCogniProcessor
 from transformers import RobertaTokenizer, RobertaModel
 
 from PIL import Image
@@ -14,7 +14,7 @@ import requests
 from transformers import AutoProcessor, AutoModel, AutoImageProcessor, AutoModelForCTC
 import torch
 import torchaudio
-from transformers import AutoConfig, Wav2Vec2Processor, Wav2Vec2Model, AutoFeatureExtractor
+from transformers import Wav2Vec2Model, AutoConfig, Wav2Vec2Processor, Wav2Vec2Model, AutoFeatureExtractor
 import soundfile as sf
 
 # TODO: IMPORTANT (DO THIS IN THE PROCESSOR CLASS OR AFTER PROCESSOR CLASS IN TRAINING LOOP)
@@ -34,7 +34,7 @@ class MyMapDataset(Dataset):
         return self.data[idx]
 
 def do_one_fold(X, y, training_args, model_config_args):
-    my_model_config = MyModelConfig(**vars(model_config_args))
+    my_model_config = InvaCogniConfig(**vars(model_config_args))
 
     vision_encoder = AutoModel.from_pretrained(my_model_config.vision_encoder_path).vision_model
     print("##############")
@@ -49,6 +49,7 @@ def do_one_fold(X, y, training_args, model_config_args):
 
     config = AutoConfig.from_pretrained(my_model_config.audio_encoder_path)
     config.mask_time_prob = 0.0 # prevent the model from masking the audio embeddings
+    config.mask_feature_prob = 0.0 # prevent the model from masking the audio embeddings
     audio_encoder = AutoModel.from_pretrained(my_model_config.audio_encoder_path, config=config)
     #print(type(audio_encoder))
     #exit(0)
@@ -72,7 +73,7 @@ def do_one_fold(X, y, training_args, model_config_args):
         # (after training, can just save the entire model
         # to get the final model)
 
-    model = MyModel(my_model_config,
+    model = InvaCogni(my_model_config,
                     vision_encoder=vision_encoder,
                     text_encoder=text_encoder,
                     audio_encoder=audio_encoder,
@@ -86,7 +87,7 @@ def do_one_fold(X, y, training_args, model_config_args):
     #exit(0)
     feature_extractor = AutoFeatureExtractor.from_pretrained(my_model_config.audio_encoder_path)
 
-    processor = MyModelProcessor(feature_extractor=feature_extractor,
+    processor = InvaCogniProcessor(feature_extractor=feature_extractor,
                                 image_processor=image_processor,
                                 tokenizer=tokenizer,)
 
@@ -121,7 +122,7 @@ def do_one_fold(X, y, training_args, model_config_args):
     return model
     
 def main():
-    parser = HfArgumentParser((trainArgs, MyModelConfig.to_dataclass()))
+    parser = HfArgumentParser((trainArgs, InvaCogniConfig.to_dataclass()))
 
     # Parse arguments from CLI
     training_args, model_config_args = parser.parse_args_into_dataclasses()
