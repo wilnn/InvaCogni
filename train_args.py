@@ -3,4 +3,4 @@ from dataclasses import dataclass
 
 @dataclass
 class trainArgs(TrainingArguments):
-    num_fold: int = 5
+    num_fold: int = 10

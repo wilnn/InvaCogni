@@ -345,7 +345,7 @@ class InvaCogni(nn.Module):
         total_loss = None
         tc_loss = 0
 
-        if dc_labels is not None:
+        if dc_labels is not None and self.training:
             dc_loss = F.cross_entropy(dc_logits, dc_labels) # may have more than 2 domains/groups
 
         if tc_labels is not None:

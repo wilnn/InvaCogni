@@ -1,4 +1,4 @@
-from mymodel.InvaCogni.modeling_invacogni import InvaCogniCrossAttention
+from modeling_invacogni import InvaCogniCrossAttention
 
 import torch
 class config:

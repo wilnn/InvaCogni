@@ -1,6 +1,6 @@
-from mymodel.InvaCogni.modeling_invacogni import InvaCogni
-from mymodel.InvaCogni.configuration_invacogni import MyModelConfig
-from mymodel.InvaCogni.processing_invacogni import MyModelProcessor
+from modeling_invacogni import InvaCogni
+from configuration_invacogni import InvaCogniConfig
+from processing_invacogni import InvaCogniProcessor
 from transformers import RobertaTokenizer, RobertaModel
 
 from PIL import Image
@@ -20,10 +20,15 @@ text_encoder = AutoModel.from_pretrained("FacebookAI/roberta-base")
 print("##############")
 
 config = AutoConfig.from_pretrained("facebook/wav2vec2-base-960h")
-config.mask_time_prob = 0.0 # prevent the model from masking the audio embeddings
+#config.mask_time_prob = 0.0 # prevent the model from masking the audio embeddings
+#config.mask_feature_prob = 0.0 # prevent the model from masking the audio embeddings
 audio_encoder = AutoModel.from_pretrained("facebook/wav2vec2-base-960h", config=config)
 #print(type(audio_encoder))
 #exit(0)
+#print("777777777777777777777777")
+#print(audio_encoder.config.mask_feature_prob)
+#audio_encoder.train()
+#print(audio_encoder.training)
 print("##############")
 
 image_processor = AutoImageProcessor.from_pretrained("google/siglip-base-patch16-224")
@@ -32,11 +37,11 @@ tokenizer = RobertaTokenizer.from_pretrained("FacebookAI/roberta-base")
 #exit(0)
 feature_extractor = AutoFeatureExtractor.from_pretrained("facebook/wav2vec2-base-960h")
 
-processor = MyModelProcessor(feature_extractor=feature_extractor,
+processor = InvaCogniProcessor(feature_extractor=feature_extractor,
                              image_processor=image_processor,
                              tokenizer=tokenizer)
 
-config = MyModelConfig()
+config = InvaCogniConfig()
 
 model = InvaCogni(config,
                 vision_encoder=vision_encoder,

@@ -17,7 +17,7 @@ import torchaudio
 #from transformers import Wav2Vec2Processor, Wav2Vec2Model
 #import soundfile as sf
 
-class MyModelProcessor(ProcessorMixin):
+class InvaCogniProcessor(ProcessorMixin):
     attributes = ["feature_extractor", "image_processor", "tokenizer"]
 
     image_processor_class = "AutoImageProcessor" # for image
