@@ -58,6 +58,8 @@ def create_dataset():
             images[img_idx],
             row_csv["dx"]
         ]
+    df.to_csv('dataset/combined_dataset.csv', index=False)  # index=False prevents saving the row numbers
+
     return df
         
 def plot_distribution(df):
@@ -223,7 +225,7 @@ def analyze_audio():
     print(f"\033[32mAverage audio length: {average_length:.2f} seconds\033[0m")
 
 def main():
-    #df = create_dataset()
+    df = create_dataset()
     #print(len(df))
     df = pd.read_csv("dataset/combined_dataset.csv")
     print(f"\033[32mAverage age: {df['age'].mean()}\033[0m")
