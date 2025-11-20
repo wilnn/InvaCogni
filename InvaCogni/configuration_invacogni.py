@@ -10,16 +10,17 @@ class InvaCogniConfig(PretrainedConfig):
     def __init__(self, loss_lambda=0.5,
                  hidden_act="gelu",
                  hidden_size=768,
-                 num_domains=4,
+                 #num_domains=4,
                  num_attention_heads=12,
-                 audio_FFN="[[768, 3072], 'gelu', [3072, 768], 'gelu']",
-                 domain_classifier_FFN="[[768, 3072], 'gelu', [3072, 768], 'gelu', [768, 384], 'gelu', [384, 4]]",
+                 audio_FFN="[[512, 3072], 'gelu', [3072, 768], 'gelu']",
+                 gender_domain_classifier_FFN="[[512, 3072], 'gelu', [3072, 512], 'gelu', [512, 1]]",
+                 language_domain_classifier_FFN="[[1280, 3072], 'gelu', [3072, 768], 'gelu', [768, 1]]",
                  task_classifier_FFN="[[1536, 3072], 'gelu', [3072, 768], 'gelu', [768, 384], 'gelu', [384, 1]]",
                  cross_attn_FFN="[[768, 3072], 'gelu', [3072, 768], 'gelu']",
                  grl_lambda=1, # will be turned into negative numnber in the code
-                 vision_encoder_path="google/siglip-base-patch16-224",
-                 text_encoder_path='FacebookAI/roberta-base',
-                 audio_encoder_path='facebook/wav2vec2-base-960h',
+                 vision_encoder_path="google/siglip-base-patch16-512", # OR use google/siglip-so400m-patch14-384
+                 text_encoder_path='google-bert/bert-base-multilingual-uncased', # OR use multilingual roberta
+                 audio_encoder_path='openai/whisper-base', # OR use facebook/wav2vec2-large-xlsr-53 or smaller: facebook/wav2vec2-base-960h which is english only. these take too much ram
                  **kwargs,
                  ):
         super().__init__(**kwargs)
@@ -29,9 +30,10 @@ class InvaCogniConfig(PretrainedConfig):
         self.loss_lambda = loss_lambda
         self.audio_FFN = ast.literal_eval(audio_FFN)
         
-        self.num_domains = num_domains
-        self.domain_classifier_FFN = ast.literal_eval(domain_classifier_FFN)
-        self.domain_classifier_FFN[-1][-1] = self.num_domains
+        #self.num_domains = num_domains
+        self.gender_domain_classifier_FFN = ast.literal_eval(gender_domain_classifier_FFN)
+        #self.gender_domain_classifier_FFN[-1][-1] = self.num_domains
+        self.language_domain_classifier_FFN = ast.literal_eval(language_domain_classifier_FFN)
 
         self.task_classifier_FFN=ast.literal_eval(task_classifier_FFN)
         self.cross_attn_FFN = ast.literal_eval(cross_attn_FFN)
