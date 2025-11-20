@@ -16,6 +16,10 @@ import torch
 import torchaudio
 #from transformers import Wav2Vec2Processor, Wav2Vec2Model
 #import soundfile as sf
+import librosa
+from transformers import WhisperFeatureExtractor
+from transformers import Wav2Vec2FeatureExtractor
+import numpy as np
 
 class InvaCogniProcessor(ProcessorMixin):
     attributes = ["feature_extractor", "image_processor", "tokenizer"]
@@ -31,11 +35,63 @@ class InvaCogniProcessor(ProcessorMixin):
                         image_processor=image_processor,
                         tokenizer=tokenizer,
                         **kwargs)
+    
+    def for_wav2vec2(self, audio, target_sampling_rate):
+        if target_sampling_rate != self.feature_extractor.sampling_rate:
+            raise ValueError(f"Require the target sampling rate to be {self.feature_extractor.sampling_rate} but get {target_sampling_rate}")
+        
+        target_sampling_rate = self.feature_extractor.sampling_rate # whisper and wav2vec2 require the audio file being 16000 hz
+        waveforms = []
+        for audio_file in audio:
+            waveform, sampling_rate = torchaudio.load(audio_file)  # waveform shape: (channels(1), num_samples)
+            
+            # If stereo, convert to mono
+            if waveform.shape[0] > 1:
+                print("convert to mono")
+                waveform = torch.mean(waveform, dim=0, keepdim=True)
+
+            if sampling_rate != target_sampling_rate:
+                resampler = torchaudio.transforms.Resample(orig_freq=sampling_rate, new_freq=target_sampling_rate)
+                waveform = resampler(waveform)
+                
+            waveforms.append(waveform)
+        
+        waveforms = self.feature_extractor(waveforms,
+                                            sampling_rate=target_sampling_rate, 
+                                            return_tensors="pt").input_values # return shape: [1, batch size, num channels(1), num_samples]
+        
+        waveforms = torch.squeeze(waveforms, (0, 2)) # return tensor shape: (batch size, num_samples)
+        return waveforms
+
+    def for_whisper(self, audio, target_sampling_rate):
+        if target_sampling_rate != self.feature_extractor.sampling_rate:
+            raise ValueError(f"Require the target sampling rate to be {self.feature_extractor.sampling_rate} but get {target_sampling_rate}")
+        
+        target_sampling_rate = self.feature_extractor.sampling_rate # whisper and wav2vec2 require the audio file being 16000 hz
+        waveforms = []
+        for audio_file in audio:
+            waveform, sampling_rate = librosa.load(audio_file, sr=target_sampling_rate, mono=True)
+            #waveform, sampling_rate = torchaudio.load(audio_file)  # waveform shape: (channels(1), num_samples)
+
+            waveforms.append(waveform)
+
+        # can make it return the attention mask by return_attention_mask=True
+        # because it needs to padd so that the examples in the batch has the 
+        # same length but whisper encoder will not use the attention mask
+        # because it will simply ignore the silence in the log mel spectrogram
+        # which means it will ignore the padding which is just silences automatically
+        # refer to: https://github.com/huggingface/transformers/blob/main/src/transformers/models/whisper/modeling_whisper.py#L631
+        waveforms = self.feature_extractor(waveforms,
+                                            sampling_rate=target_sampling_rate, 
+                                            return_tensors="pt")
+        
+        return waveforms['input_features'] # shape: [batch size, seq length, dim]
+
     def __call__(self, images, text, audio,
-                 dc_labels=None,
+                 gender_dc_labels=None,
+                 language_dc_labels=None,
                  tc_labels=None,
-                 target_sample_rate=16000):
-        # Resample if sample_rate != 16kHz (Wav2Vec2 default)
+                 target_sampling_rate=16000):
         """
         Do the data preprocessing
 
@@ -47,7 +103,7 @@ class InvaCogniProcessor(ProcessorMixin):
             text (list[str]):
                 a list of string that are the text
             tc_labels (list[int]):
-            dc_labels (list[int]):
+            gender_dc_labels (list[int]):
 
         Returns:
             {
@@ -55,37 +111,30 @@ class InvaCogniProcessor(ProcessorMixin):
                 "pixel_values":pixel_values,
                 "input_ids":input_ids.input_ids,
                 "input_ids_attention_mask":input_ids.attention_mask,
-                "dc_labels": dc_labels,
+                "gender_dc_labels": gender_dc_labels,
                 "tc_labels":tc_labels,
             }
         """
-        waveforms = []
-        target_sample_rate = 16000 # whisper and wav2vec2 require the audio file being 16000 hz
-        for audio_file in audio:
-            waveform, sample_rate = torchaudio.load(audio_file)  # waveform shape: (channels(1), num_samples)
-            
-            # If stereo, convert to mono
-            if waveform.shape[0] > 1:
-                print("convert to mono")
-                waveform = torch.mean(waveform, dim=0, keepdim=True)
+        #print(self.feature_extractor.sampling_rate)
+        #exit(0)
 
-            if sample_rate != target_sample_rate:
-                resampler = torchaudio.transforms.Resample(orig_freq=sample_rate, new_freq=target_sample_rate)
-                waveform = resampler(waveform)
-            
-            waveforms.append(waveform)
-        
-        waveforms = self.feature_extractor(waveforms,
-                                            sampling_rate=target_sample_rate, 
-                                            return_tensors="pt").input_values # return shape: [1, batch size, num channels(1), num_samples]
-        
-        waveforms = torch.squeeze(waveforms, (0, 2)) # return tensor shape: (batch size, num_samples)
-        
-        pixel_values = self.image_processor.preprocess(images=[Image.open(path) for path in images], return_tensors="pt").pixel_values
+        if type(self.feature_extractor) is WhisperFeatureExtractor:
+            waveforms = self.for_whisper(audio, target_sampling_rate)
+        elif type(self.feature_extractor) is Wav2Vec2FeatureExtractor:
+            waveforms = self.for_wav2vec2(audio, target_sampling_rate)
+        else:
+            raise TypeError("Unsupported audio encoder type")
+
+        #print("111111111111111111111111111")
+        #print(images)
+        #print(np.array(Image.open(images[0])).shape)
+        #exit(0)
+        pixel_values = self.image_processor.preprocess(images=[Image.open(path).convert("RGB") for path in images], return_tensors="pt").pixel_values
 
         input_ids = self.tokenizer(text, truncation=True, padding="longest", return_tensors='pt')
         
-        dc_labels = None if not dc_labels else torch.tensor(dc_labels, dtype=torch.long)
+        gender_dc_labels = None if not gender_dc_labels else torch.tensor(gender_dc_labels, dtype=torch.float32).unsqueeze(-1)
+        language_dc_labels = None if not language_dc_labels else torch.tensor(language_dc_labels, dtype=torch.float32).unsqueeze(-1)
         tc_labels = None if not tc_labels else torch.tensor(tc_labels, dtype=torch.float32).unsqueeze(-1)
 
         return {
@@ -93,7 +142,8 @@ class InvaCogniProcessor(ProcessorMixin):
                 "pixel_values":pixel_values,
                 "input_ids":input_ids.input_ids,
                 "input_ids_attention_mask":input_ids.attention_mask,
-                "dc_labels": dc_labels,
+                "language_dc_labels":language_dc_labels,
+                "gender_dc_labels": gender_dc_labels,
                 "tc_labels":tc_labels,
                 }
 
