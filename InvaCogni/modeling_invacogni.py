@@ -5,7 +5,7 @@ import torch.nn.functional as F
 from transformers.modeling_outputs import SequenceClassifierOutput
 from dataclasses import dataclass
 from typing import Optional, Tuple
-
+from huggingface_hub import PyTorchModelHubMixin
 
 class GradReverse(torch.autograd.Function):
     @staticmethod
@@ -65,7 +65,7 @@ class InvacogniAudioEncoder(nn.Module):
             self.audio_encoder = audio_encoder
         else:
             config_ = AutoConfig.from_pretrained(config.audio_encoder_path)
-            self.audio_encoder = AutoModel.from_config(config_)
+            self.audio_encoder = AutoModel.from_config(config_).encoder
     
     def forward(self, audio, return_dict=False, **kwargs):
         return self.audio_encoder(audio,
@@ -199,10 +199,13 @@ class InvaCogniCrossAttention(nn.Module):
 @dataclass
 class InvaCogniClassifierOutput(SequenceClassifierOutput):
     # use Optional[...] so it's backward-compatible when field is not present
-    dc_logits: Optional[torch.Tensor] = None
-    dc_loss: Optional[torch.Tensor] = None
+    gender_dc_logits: Optional[torch.Tensor] = None
+    gender_dc_loss: Optional[torch.Tensor] = None
     tc_loss: Optional[torch.Tensor] = None
+    language_dc_logits: Optional[torch.Tensor] = None
+    language_dc_loss: Optional[torch.Tensor] = None
 
+#class InvaCogni(nn.Module, PyTorchModelHubMixin):
 class InvaCogni(nn.Module):
     def __init__(self, config, vision_encoder=None, text_encoder=None,
                  audio_encoder=None):
@@ -210,15 +213,16 @@ class InvaCogni(nn.Module):
         self.config = config # if use PretrainedMoDel as parent class then
                             # don't have to do this
 
-        self.GRL = InvaCogniGRL(config)
+        self.gender_GRL = InvaCogniGRL(config)
+        self.language_GRL = InvaCogniGRL(config)
         self.vision_encoder = InvaCogniVisionEncoder(config, vision_encoder)
         self.text_encoder = InvaCogniTextEncoder(config, text_encoder)
         self.audio_encoder = InvacogniAudioEncoder(config, audio_encoder)
 
-
         self.audio_FFN = InvaCogniFFN(config, config.audio_FFN)
 
-        self.domain_classifier = InvaCogniFFN(config, config.domain_classifier_FFN)
+        self.gender_domain_classifier = InvaCogniFFN(config, config.gender_domain_classifier_FFN)
+        self.language_domain_classifier = InvaCogniFFN(config, config.language_domain_classifier_FFN)
         self.task_classifier = InvaCogniFFN(config, config.task_classifier_FFN)
         
         self.cross_attn = InvaCogniCrossAttention(config)
@@ -229,8 +233,16 @@ class InvaCogni(nn.Module):
         #self.self_attn_layer_norm = nn.LayerNorm(normalized_shape=config.hidden_size)
 
 
-    def domain_classify(self, audio_pooled_embed):
-        return self.domain_classifier(self.GRL(audio_pooled_embed))
+    def gender_domain_classify(self, audio_pooled_embed):
+        return self.gender_domain_classifier(self.gender_GRL(audio_pooled_embed))
+    
+    def language_domain_classify(self, input_ids_out, audio_pooled_embed):
+        #print(input_ids_out.pooler_output.shape)
+        #print(audio_pooled_embed.shape)
+        out = torch.cat([input_ids_out.pooler_output, audio_pooled_embed], dim=-1)
+        #print(out.shape)
+        #exit(0)
+        return self.language_domain_classifier(self.language_GRL(out))
 
     def task_classify(self, input_ids_out, pixel_values_out,
                       audio_pooled_embed,
@@ -245,7 +257,7 @@ class InvaCogni(nn.Module):
 
         out = self.cross_attn(pixel_values_out.last_hidden_state,
                               input_ids_out.pooler_output.unsqueeze(1), # only do it with the pooler ouput since 
-                                                        # we will only use it afterward
+                                                                    # we will only use it afterward
                               pixel_values_attention_mask)
         
 
@@ -271,8 +283,9 @@ class InvaCogni(nn.Module):
     def forward(self, input_ids, pixel_values, audio,
                 #pixel_values_attention_mask=None,
                 input_ids_attention_mask=None,
-                dc_labels =None,
-                tc_labels =None,
+                gender_dc_labels=None,
+                language_dc_labels=None,
+                tc_labels=None,
                 return_dict=True,
                   **kwargs):
 
@@ -291,19 +304,25 @@ class InvaCogni(nn.Module):
         # TODO: DONE
             # residual connection and layer norm(RMSnorm?) after attention
 
-
+        #print("do audio")
         audio_out = self.audio_encoder(audio, return_dict=True)
-        audio_hidden_states = audio_out.last_hidden_state
-
-        audio_pooled_embed = audio_hidden_states.mean(dim=1)
+        #audio_hidden_states = audio_out.last_hidden_state
+        
+        #print(audio_out.last_hidden_state.reshape(audio_out.last_hidden_state.shape[0], -1).shape)
+        
+        audio_pooled_embed = audio_out.last_hidden_state.mean(dim=1)
+        #print(f"audio {audio_pooled_embed.shape}")
         #print(audio_pooled_embed.shape)
         #exit(0)
         # feature extracted by convolutional in the model. Contain raw acounstic features
         #audio_feature = audio_out.extract_features
 
+        #print("do text")
         input_ids_out = self.text_encoder(input_ids, input_ids_attention_mask)
-
+        #print(f"text {input_ids_out.pooler_output.shape}")
+        #print("do image")
         pixel_values_out = self.vision_encoder(pixel_values)
+        #print(f"text {pixel_values_out.last_hidden_state.shape}")
         #print('#############')
         #print(input_ids_out.pooler_output.unsqueeze(1).shape)
         #exit(0)
@@ -330,32 +349,45 @@ class InvaCogni(nn.Module):
             # IF USE THE torch.nn.MultiheadAttention then need to flip the 
             # attention mask output by the model processor because hugginface 
             # 1 and 0 in the attention mask means the opposite
-            
-        dc_logits = None
-        if self.training or dc_labels is not None: # if training or given dc_labels(for evaluation)
-            dc_logits = self.domain_classify(audio_pooled_embed)
+        
+        #print("do gender dc")
+        gender_dc_logits = None
+        if gender_dc_labels is not None: # if training and or given gender_dc_labels(for evaluation)
+            gender_dc_logits = self.gender_domain_classify(audio_pooled_embed)
 
+        #print("do language dc")
+        language_dc_logits = None
+        if language_dc_labels is not None:
+            language_dc_logits = self.language_domain_classify(input_ids_out=input_ids_out, audio_pooled_embed=audio_pooled_embed)
+
+        #print("do task classifier")
         tc_logits = self.task_classify(input_ids_out,
                                        pixel_values_out,
                                        audio_pooled_embed,
                                        pixel_values_attention_mask,
                                        input_ids_attention_mask)
 
-        dc_loss = 0
+        gender_dc_loss = 0
+        language_dc_loss = 0
         total_loss = None
         tc_loss = 0
+        if gender_dc_labels is not None and self.training:
+            gender_dc_loss = F.binary_cross_entropy_with_logits(gender_dc_logits, gender_dc_labels)
 
-        if dc_labels is not None and self.training:
-            dc_loss = F.cross_entropy(dc_logits, dc_labels) # may have more than 2 domains/groups
-
+        if language_dc_labels is not None and self.training:
+            language_dc_loss = F.binary_cross_entropy_with_logits(language_dc_logits, language_dc_labels)
+            
         if tc_labels is not None:
             tc_loss = F.binary_cross_entropy_with_logits(tc_logits, tc_labels)
 
-        if dc_labels  is not None or tc_labels is not None:
-            total_loss = tc_loss + self.config.loss_lambda*dc_loss
+        if gender_dc_labels is not None or tc_labels is not None or language_dc_labels is not None:
+            total_loss = tc_loss + self.config.loss_lambda*gender_dc_loss + self.config.loss_lambda*language_dc_loss
+
+        language_dc_loss = None if language_dc_logits is None else language_dc_loss
+        gender_dc_loss = None if gender_dc_logits is None else gender_dc_loss
 
         if not return_dict:
-            output = (tc_logits, dc_logits)
+            output = (tc_logits, gender_dc_logits, language_dc_logits)
             return ((total_loss,) + output) if total_loss is not None else output
 
         return InvaCogniClassifierOutput(
@@ -363,7 +395,9 @@ class InvaCogni(nn.Module):
             logits=tc_logits,
             #hidden_states=None,
             #attentions=None,
-            dc_logits=dc_logits,
-            dc_loss=dc_loss,
+            gender_dc_logits=gender_dc_logits,
+            gender_dc_loss=gender_dc_loss,
+            language_dc_logits=language_dc_logits,
+            language_dc_loss=language_dc_loss,
             tc_loss=tc_loss,
         )
