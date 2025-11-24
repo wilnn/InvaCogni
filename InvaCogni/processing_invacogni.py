@@ -90,7 +90,7 @@ class InvaCogniProcessor(ProcessorMixin):
     def __call__(self, images, text, audio,
                  gender_dc_labels=None,
                  language_dc_labels=None,
-                 tc_labels=None,
+                 labels=None,
                  target_sampling_rate=16000):
         """
         Do the data preprocessing
@@ -102,7 +102,7 @@ class InvaCogniProcessor(ProcessorMixin):
                 a list of string that are the paths to the image files
             text (list[str]):
                 a list of string that are the text
-            tc_labels (list[int]):
+            labels (list[int]):
             gender_dc_labels (list[int]):
 
         Returns:
@@ -112,7 +112,7 @@ class InvaCogniProcessor(ProcessorMixin):
                 "input_ids":input_ids.input_ids,
                 "input_ids_attention_mask":input_ids.attention_mask,
                 "gender_dc_labels": gender_dc_labels,
-                "tc_labels":tc_labels,
+                "labels":labels,
             }
         """
         #print(self.feature_extractor.sampling_rate)
@@ -135,7 +135,7 @@ class InvaCogniProcessor(ProcessorMixin):
         
         gender_dc_labels = None if not gender_dc_labels else torch.tensor(gender_dc_labels, dtype=torch.float32).unsqueeze(-1)
         language_dc_labels = None if not language_dc_labels else torch.tensor(language_dc_labels, dtype=torch.float32).unsqueeze(-1)
-        tc_labels = None if not tc_labels else torch.tensor(tc_labels, dtype=torch.float32).unsqueeze(-1)
+        labels = None if not labels else torch.tensor(labels, dtype=torch.float32).unsqueeze(-1)
 
         return {
                 "audio":waveforms,
@@ -144,6 +144,6 @@ class InvaCogniProcessor(ProcessorMixin):
                 "input_ids_attention_mask":input_ids.attention_mask,
                 "language_dc_labels":language_dc_labels,
                 "gender_dc_labels": gender_dc_labels,
-                "tc_labels":tc_labels,
+                "labels": labels,
                 }
 

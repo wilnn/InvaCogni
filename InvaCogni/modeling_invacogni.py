@@ -285,11 +285,10 @@ class InvaCogni(nn.Module):
                 input_ids_attention_mask=None,
                 gender_dc_labels=None,
                 language_dc_labels=None,
-                tc_labels=None,
+                labels=None,
                 return_dict=True,
                   **kwargs):
 
-        
         # TODO: DONE
             # WORD2VEC2 AND WHISPER DO NOT HAVE POOLED OUTPUT.
             # PEOPLE COMPUTE THE POOLED OUTPUT FROM IT BY COMPUTE THE MEAN OF
@@ -352,12 +351,14 @@ class InvaCogni(nn.Module):
         
         #print("do gender dc")
         gender_dc_logits = None
-        if gender_dc_labels is not None: # if training and or given gender_dc_labels(for evaluation)
+        if gender_dc_labels is not None and gender_dc_labels.dim() > 1: # if training and or given gender_dc_labels(for evaluation)
+            #print("33333333333333333333")
             gender_dc_logits = self.gender_domain_classify(audio_pooled_embed)
 
         #print("do language dc")
         language_dc_logits = None
-        if language_dc_labels is not None:
+        if language_dc_labels is not None and language_dc_labels.dim() > 1:
+            #print("44444444444444444444")
             language_dc_logits = self.language_domain_classify(input_ids_out=input_ids_out, audio_pooled_embed=audio_pooled_embed)
 
         #print("do task classifier")
@@ -367,29 +368,32 @@ class InvaCogni(nn.Module):
                                        pixel_values_attention_mask,
                                        input_ids_attention_mask)
 
-        gender_dc_loss = 0
-        language_dc_loss = 0
+        gender_dc_loss = torch.tensor(0, device=tc_logits.device)
+        language_dc_loss = torch.tensor(0, device=tc_logits.device)
         total_loss = None
-        tc_loss = 0
-        if gender_dc_labels is not None and self.training:
+        tc_loss = torch.tensor(0, device=tc_logits.device)
+        if gender_dc_labels is not None and self.training and gender_dc_labels.dim() > 1:
+            #print("111111111111111111111")
             gender_dc_loss = F.binary_cross_entropy_with_logits(gender_dc_logits, gender_dc_labels)
 
-        if language_dc_labels is not None and self.training:
+        if language_dc_labels is not None and self.training and language_dc_labels.dim() > 1:
+            #print("2222222222222222222222")
             language_dc_loss = F.binary_cross_entropy_with_logits(language_dc_logits, language_dc_labels)
             
-        if tc_labels is not None:
-            tc_loss = F.binary_cross_entropy_with_logits(tc_logits, tc_labels)
+        if labels is not None:
+            tc_loss = F.binary_cross_entropy_with_logits(tc_logits, labels)
 
-        if gender_dc_labels is not None or tc_labels is not None or language_dc_labels is not None:
+        if gender_dc_labels is not None or labels is not None or language_dc_labels is not None:
             total_loss = tc_loss + self.config.loss_lambda*gender_dc_loss + self.config.loss_lambda*language_dc_loss
 
         language_dc_loss = None if language_dc_logits is None else language_dc_loss
         gender_dc_loss = None if gender_dc_logits is None else gender_dc_loss
 
         if not return_dict:
-            output = (tc_logits, gender_dc_logits, language_dc_logits)
+            output = (tc_logits, tc_loss, gender_dc_logits, gender_dc_loss, language_dc_logits, language_dc_loss)
             return ((total_loss,) + output) if total_loss is not None else output
-
+        #print(f"dddddddddd{gender_dc_logits}")
+        
         return InvaCogniClassifierOutput(
             loss=total_loss,
             logits=tc_logits,

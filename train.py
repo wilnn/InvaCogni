@@ -15,7 +15,7 @@ from transformers import (TrainingArguments, TrainerState, TrainerControl,
                         AutoProcessor, AutoModel,
                         AutoImageProcessor, AutoModelForCTC,
                         EvalPrediction, TrainerCallback,
-                        set_seed)
+                        set_seed, EarlyStoppingCallback)
 import torch
 #import torchaudio
 #from transformers import Wav2Vec2Model, AutoConfig, Wav2Vec2Processor
@@ -71,7 +71,6 @@ def compute_loss(outputs,
 '''
 
 
-
 class TaukdialDataset(Dataset):
     def __init__(self, ds, processor,
                  audio_parent_path="./dataset/taukadial/train/",
@@ -106,7 +105,7 @@ class TaukdialDataset(Dataset):
         return self.processor(images=[image_file],
                            text=[text],
                            audio=[audio_file],
-                           tc_labels=[label],
+                           labels=[label],
                            gender_dc_labels=[gender],
                            language_dc_labels=[language],
                            target_sampling_rate=16000,
@@ -124,7 +123,7 @@ def TaukdialDataset_collate_fn(batch):
     audio = [n['audio'] for n in batch]
     gender_dc_labels = [n['gender_dc_labels'] for n in batch] if training_args.dc_gender else None
     language_dc_labels = [n['language_dc_labels'] for n in batch] if training_args.dc_language else None
-    tc_labels = [n['tc_labels'] for n in batch]
+    labels = [n['labels'] for n in batch]
 
     # pad text tokens to the longest
     input_ids = []
@@ -143,9 +142,9 @@ def TaukdialDataset_collate_fn(batch):
     audio = torch.cat(audio, dim=0)
     input_ids = torch.cat(input_ids, dim=0)
     input_ids_attention_mask = torch.cat(input_ids_attention_mask, dim=0)
-    gender_dc_labels = torch.cat(gender_dc_labels, dim=0) if training_args.dc_gender else None
-    language_dc_labels = torch.cat(language_dc_labels, dim=0) if training_args.dc_language else None
-    tc_labels = torch.cat(tc_labels, dim=0)
+    gender_dc_labels = torch.cat(gender_dc_labels, dim=0) if training_args.dc_gender else torch.tensor(-49)
+    language_dc_labels = torch.cat(language_dc_labels, dim=0) if training_args.dc_language else torch.tensor(-49)
+    labels = torch.cat(labels, dim=0)
 
     return {
             "audio":audio,
@@ -154,7 +153,7 @@ def TaukdialDataset_collate_fn(batch):
             "input_ids_attention_mask":input_ids_attention_mask,
             "gender_dc_labels": gender_dc_labels,
             "language_dc_labels": language_dc_labels,
-            "tc_labels":tc_labels,
+            "labels":labels,
             }
 
 def TaukdialDataset_collate_fn2(batch):
@@ -165,7 +164,7 @@ def TaukdialDataset_collate_fn2(batch):
     audio = [n['audio'] for n in batch]
     gender_dc_labels = [n['gender_dc_labels'] for n in batch]
     language_dc_labels = [n['language_dc_labels'] for n in batch]
-    tc_labels = [n['tc_labels'] for n in batch]
+    labels = [n['labels'] for n in batch]
 
     # pad text tokens to the longest
     input_ids = []
@@ -185,7 +184,7 @@ def TaukdialDataset_collate_fn2(batch):
     input_ids_attention_mask = torch.cat(input_ids_attention_mask, dim=0)
     gender_dc_labels = torch.cat(gender_dc_labels, dim=0)
     language_dc_labels = torch.cat(language_dc_labels, dim=0)
-    tc_labels = torch.cat(tc_labels, dim=0)
+    labels = torch.cat(labels, dim=0)
 
     return {
             "audio":audio,
@@ -194,18 +193,48 @@ def TaukdialDataset_collate_fn2(batch):
             "input_ids_attention_mask":input_ids_attention_mask,
             "gender_dc_labels": gender_dc_labels,
             "language_dc_labels": language_dc_labels,
-            "tc_labels":tc_labels,
+            "labels":labels,
             }
 
-'''
-def compute_metrics(p: EvalPrediction):
-    p.predictions
+
+def compute_metrics_fn(p: EvalPrediction):
+    #print(f"eeeeeeeeeeeeeeeee{p.predictions[0]}")
+    #print(type(p.predictions))
+    #print(len(p.predictions))
+    #print(p.predictions[0].shape)
+    #print(f"############{p.label_ids[2]}")
+    #print(type(p.label_ids))
+    #print(len(p.predictions))
+    #print(p.label_ids[2].shape)
+    #exit(0)
+    preds = p.predictions[0].squeeze(-1)
+    labels = p.label_ids[2].squeeze(-1).astype(int)
+    preds = (preds > 0.5).astype(int)
+    tc_f1 = f1_score(labels, preds, average="macro")
+    tc_bal_acc = balanced_accuracy_score(labels, preds)
+    #print("#########")
+    #print(p.label_ids)
+    #print(type(p.label_ids))
+    #print(len(p.predictions))
+    #print(p.label_ids[0].shape)
+    #print("#########")
+    #print(p.inputs[0])
+    #print(type(p.inputs))
+    #print(p.inputs.shape)
+    #print("#########")
+    #print(p.losses)
+    #print(type(p.losses))
+    #print(p.losses.shape)
+    #exit(0)
+
     return {
+        "tc_f1": tc_f1,
+        "tc_bal_acc": tc_bal_acc,
+        "avg_f1_bal_acc": (tc_f1+tc_bal_acc)/2,
+        }
 
-    }
-'''
 
-def do_one_fold(train_samples, fold_num):
+def do_one_fold(train_samples, test_samples, fold_num):
 
     invacogni_config = InvaCogniConfig(**vars(model_config_args))
 
@@ -245,20 +274,22 @@ def do_one_fold(train_samples, fold_num):
         model=model,
         args=training_args,
         train_dataset=train_samples,
-        #eval_dataset=tokenized_datasets["test"],
+        eval_dataset=test_samples,
         #tokenizer=tokenizer,
         data_collator=TaukdialDataset_collate_fn,
         #compute_loss_fun=compute_loss,
-        #compute_metrics=compute_metrics,
-        #callbacks=[EarlyStoppingCallback(early_stopping_patience=2)],
+        compute_metrics=compute_metrics_fn,
+        callbacks=[EarlyStoppingCallback(early_stopping_patience=2,
+                                         #early_stopping_threshold=0.001,
+                                         )],
     )
 
     trainer.train()
 
-    # save final model 
+    '''# save final model 
     if trainer.is_world_process_zero() and (fold_num+1) == training_args.num_fold:
-        trainer.save_model(f"./{training_args.output_dir}/fold_{fold_num}")
-        processor.save_pretrained(f"./{training_args.output_dir}/fold_{fold_num}")
+        trainer.save_model(f"./{training_args.output_dir}")
+        processor.save_pretrained(f"./{training_args.output_dir}")'''
 
     return model, trainer.is_world_process_zero()
 
@@ -278,14 +309,16 @@ def evaluate(model, dataset, is_train_dataset, fold_num):
     temp_input_ids_out_list = []
 
     with torch.inference_mode():  # 2. Enable inference mode
-        for batch in test_loader:
+        for batch in tqdm(test_loader):
             batch["audio"] = batch["audio"].to(next(model.parameters()).device)
             batch["pixel_values"] = batch["pixel_values"].to(next(model.parameters()).device)
             batch["input_ids"] = batch["input_ids"].to(next(model.parameters()).device)
             batch["input_ids_attention_mask"] = batch["input_ids_attention_mask"].to(next(model.parameters()).device)
-            batch["gender_dc_labels"] = batch["gender_dc_labels"].to(next(model.parameters()).device)
-            batch["language_dc_labels"] = batch["language_dc_labels"].to(next(model.parameters()).device)
-            batch["tc_labels"] = batch["tc_labels"].to(next(model.parameters()).device)
+            temp_gen = batch["gender_dc_labels"]
+            batch["gender_dc_labels"] = torch.tensor(-49).to(next(model.parameters()).device)
+            temp_lang = batch["language_dc_labels"]
+            batch["language_dc_labels"] = torch.tensor(-49).to(next(model.parameters()).device)
+            batch["labels"] = batch["labels"].to(next(model.parameters()).device)
             
             output = model(**batch)
             #print(output)
@@ -299,9 +332,9 @@ def evaluate(model, dataset, is_train_dataset, fold_num):
             probs = F.sigmoid(output['logits']).squeeze(-1)
             #print(probs)
             preds = (probs > 0.5).int().cpu().numpy()
-            labels = batch['tc_labels'].squeeze(-1).int().cpu().numpy()
-            genders = batch['gender_dc_labels'].squeeze(-1).int().cpu().numpy()
-            languages = batch['language_dc_labels'].squeeze(-1).int().cpu().numpy()
+            labels = batch['labels'].squeeze(-1).int().cpu().numpy()
+            genders = temp_gen.squeeze(-1).int().cpu().numpy()
+            languages = temp_lang.squeeze(-1).int().cpu().numpy()
             audio_out = audio_out.cpu().numpy()
             input_ids_out = input_ids_out.cpu().numpy()
 
@@ -416,7 +449,7 @@ def evaluate(model, dataset, is_train_dataset, fold_num):
         summary += f"Average Balanced Accuracy for chinese at fold {fold_num} for {temp}: {c_bal_acc}\n\n"
         summary += f"Average F1 for all languages at fold {fold_num} for {temp}: {(e_f1+c_f1)/2}\n"
         summary += f"Average Balanced Accuracy for all languages at fold {fold_num} for {temp}: {(c_bal_acc+e_bal_acc)/2}\n"
-        with open(f"./{training_args.output_dir}/fold_{fold_num}/result.txt", "a") as f:
+        with open(f"./{training_args.output_dir}/result.txt", "a") as f:
             f.write(summary)
     return tc_f1, tc_bal_acc, m_f1, m_bal_acc, f_f1, f_bal_acc, e_f1, e_bal_acc, c_f1, c_bal_acc, temp_audio_out_list, temp_input_ids_out_list, mask_m, mask_f, mask_e, mask_c
 
@@ -486,14 +519,15 @@ if __name__ == "__main__":
     labels = []
     for i in range(len(dataset)):
         labels.append(map_label[f"{dataset.iloc[i]['language']}_{dataset.iloc[i]['sex']}"])
-
-    '''temp = {}
+    '''
+    temp = {}
     for nn in labels:
         if nn in temp:
             temp[nn] += 1
         else:
             temp[nn] = 1
     print(temp)
+    print(len(dataset))
     exit(0)'''
     skf = StratifiedKFold(n_splits=training_args.num_fold, shuffle=True, random_state=training_args.seed)
 
@@ -523,11 +557,13 @@ if __name__ == "__main__":
         figures.append(fig)
         axes_list.append(ax)
 
-    training_args.run_name = f"{training_args.run_name}_fold_{0}"
+    training_args.run_name = f"{training_args.run_name}/fold_{0}"
+    training_args.output_dir = f"{training_args.output_dir}/fold_{0}"
     # for each fold
     for n, (train_index, test_index) in enumerate(skf.split(dataset, labels)):
         
         training_args.run_name = training_args.run_name[:-1] + str(n)
+        training_args.output_dir = training_args.output_dir[:-1] + str(n)
         
         train_samples = [dataset.iloc[n] for n in train_index]
         #train_labels = [dataset.iloc[n]['label'] for n in train_index]
@@ -539,28 +575,28 @@ if __name__ == "__main__":
                               audio_parent_path=training_args.audio_parent_path,
                               image_parent_path=training_args.image_parent_path,
                               )
-
-        model, is_main_process = do_one_fold(train_samples, n)
+        test_samples = TaukdialDataset(ds=test_samples,
+                    processor=processor,
+                    audio_parent_path=training_args.audio_parent_path,
+                    image_parent_path=training_args.image_parent_path,
+                    )
+        
+        model, is_main_process = do_one_fold(train_samples, test_samples, n)
 
         if is_main_process:
-            os.makedirs(f"./{training_args.output_dir}/fold_{n}", exist_ok=True)
-            
-            test_samples = TaukdialDataset(ds=test_samples,
-                                processor=processor,
-                                audio_parent_path=training_args.audio_parent_path,
-                                image_parent_path=training_args.image_parent_path,
-                                )
+            os.makedirs(f"./{training_args.output_dir}", exist_ok=True)
             
             # clear prev run
-            with open(f"./{training_args.output_dir}/fold_{n}/result.txt", "w") as f:
+            with open(f"./{training_args.output_dir}/result.txt", "w") as f:
                 f.write("")
-            
+            print(f"Evaluate model on train set at fold {n}:")
             evaluate(model, train_samples, is_train_dataset=True, fold_num=n)
-            with open(f"./{training_args.output_dir}/fold_{n}/result.txt", "a") as f:
+            with open(f"./{training_args.output_dir}/result.txt", "a") as f:
                 f.write("##############################\n")
                 f.write("##############################\n")
                 f.write("##############################\n")
                 f.write("On test fold:\n")
+            print(f"Evaluate model on test set at fold {n}:")
             tc_f1t, tc_bal_acct, m_f1t, m_bal_acct, f_f1t, f_bal_acct, e_f1t, e_bal_acct, c_f1t, c_bal_acct, audio_outt, input_ids_outt, mask_mt, mask_ft, mask_et, mask_ct = evaluate(model, test_samples, is_train_dataset=False, fold_num=n)
 
             tc_f1 += tc_f1t
@@ -589,6 +625,8 @@ if __name__ == "__main__":
         report_to = training_args.report_to[0] if isinstance(training_args.report_to, list) else training_args.report_to
         if report_to == "wandb" or report_to == "all":
             wandb.finish()
+        if n == 1:
+            exit(0)
 
     if is_main_process:
         tc_f1 /= training_args.num_fold
@@ -604,7 +642,7 @@ if __name__ == "__main__":
         
         summary = ""
         
-        with open(f"./{training_args.output_dir}/avg_result.txt", "w") as f:
+        with open(f"./{training_args.output_dir[:-7]}/avg_result.txt", "w") as f:
             summary += "General (MCI vs NC) results:\n"
             #print(f"F1 for MCI: {tc_f1[1]}")
             #print(f"F1 for NC: {tc_f1[0]}")
@@ -663,19 +701,19 @@ if __name__ == "__main__":
         audio_out_list = tsne.fit_transform(audio_out_list)
         input_ids_out_list = tsne.fit_transform(input_ids_out_list)
 
-        axes_list[0].scatter(audio_out_list[mask_m][:,0], audio_out_list[mask_m][:,1], color='orange', label='Male')
-        axes_list[0].scatter(audio_out_list[mask_f][:,0], audio_out_list[mask_f][:,1],color='blue', label='Female')
-        axes_list[1].scatter(audio_out_list[mask_e][:,0], audio_out_list[mask_e][:,1],color='orange', label='English')
-        axes_list[2].scatter(input_ids_out_list[mask_e][:,0], input_ids_out_list[mask_e][:,1],color='orange', label='English')
-        axes_list[1].scatter(audio_out_list[mask_c][:,0], audio_out_list[mask_c][:,1],color='blue', label='Chinese')
-        axes_list[2].scatter(input_ids_out_list[mask_c][:,0], input_ids_out_list[mask_c][:,1],color='blue', label='Chinese')
+        axes_list[0].scatter(audio_out_list[mask_m][:,0], audio_out_list[mask_m][:,1], color='orange', label='Male', alpha=0.5)
+        axes_list[0].scatter(audio_out_list[mask_f][:,0], audio_out_list[mask_f][:,1],color='blue', label='Female', alpha=0.5)
+        axes_list[1].scatter(audio_out_list[mask_e][:,0], audio_out_list[mask_e][:,1],color='orange', label='English', alpha=0.5)
+        axes_list[2].scatter(input_ids_out_list[mask_e][:,0], input_ids_out_list[mask_e][:,1],color='orange', label='English', alpha=0.5)
+        axes_list[1].scatter(audio_out_list[mask_c][:,0], audio_out_list[mask_c][:,1],color='blue', label='Chinese', alpha=0.5)
+        axes_list[2].scatter(input_ids_out_list[mask_c][:,0], input_ids_out_list[mask_c][:,1],color='blue', label='Chinese', alpha=0.5)
 
         axes_list[0].legend()
         axes_list[0].set_title(f'Male vs Female Audio Embeddings') 
-        figures[0].savefig(f"./{training_args.output_dir}/m_vs_f_audio.png")
+        figures[0].savefig(f"./{training_args.output_dir[:-7]}/m_vs_f_audio.png")
         axes_list[1].legend()
         axes_list[1].set_title(f'English vs Chinese Audio Embeddings') 
-        figures[1].savefig(f"./{training_args.output_dir}/en_vs_cn_audio.png")
+        figures[1].savefig(f"./{training_args.output_dir[:-7]}/en_vs_cn_audio.png")
         axes_list[2].legend()
         axes_list[2].set_title(f'English vs Chinese Text Embeddings') 
-        figures[2].savefig(f"./{training_args.output_dir}/en_vs_cn_text.png")
+        figures[2].savefig(f"./{training_args.output_dir[:-7]}/en_vs_cn_text.png")
