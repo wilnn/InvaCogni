@@ -12,15 +12,16 @@ class InvaCogniConfig(PretrainedConfig):
                  hidden_size=768,
                  #num_domains=4,
                  num_attention_heads=12,
-                 audio_FFN="[[512, 3072], 'gelu', [3072, 768], 'gelu']",
+                 audio_FFN="[[512, 3072], 'gelu', 'dropout-0.1', [3072, 768], 'gelu']",
                  gender_domain_classifier_FFN="[[512, 3072], 'gelu', [3072, 512], 'gelu', [512, 1]]",
                  language_domain_classifier_FFN="[[1280, 3072], 'gelu', [3072, 768], 'gelu', [768, 1]]",
-                 task_classifier_FFN="[[1536, 3072], 'gelu', [3072, 768], 'gelu', [768, 384], 'gelu', [384, 1]]",
-                 cross_attn_FFN="[[768, 3072], 'gelu', [3072, 768], 'gelu']",
+                 task_classifier_FFN="[[1536, 3072], 'gelu', 'dropout-0.05', [3072, 768], 'gelu', 'dropout-0.05', [768, 384], 'gelu', [384, 1]]",
+                 cross_attn_FFN="[[768, 3072], 'gelu', 'dropout-0.1', [3072, 768], 'gelu']",
                  grl_lambda=1, # will be turned into negative numnber in the code
                  vision_encoder_path="google/siglip-base-patch16-512", # OR use google/siglip-so400m-patch14-384
                  text_encoder_path='google-bert/bert-base-multilingual-uncased', # OR use multilingual roberta
                  audio_encoder_path='openai/whisper-base', # OR use facebook/wav2vec2-large-xlsr-53 or smaller: facebook/wav2vec2-base-960h which is english only. these take too much ram
+                 attention_dropout=0.1,
                  **kwargs,
                  ):
         super().__init__(**kwargs)
@@ -29,7 +30,7 @@ class InvaCogniConfig(PretrainedConfig):
         self.hidden_act = hidden_act
         self.loss_lambda = loss_lambda
         self.audio_FFN = ast.literal_eval(audio_FFN)
-        
+        self.attention_dropout = attention_dropout
         #self.num_domains = num_domains
         self.gender_domain_classifier_FFN = ast.literal_eval(gender_domain_classifier_FFN)
         #self.gender_domain_classifier_FFN[-1][-1] = self.num_domains

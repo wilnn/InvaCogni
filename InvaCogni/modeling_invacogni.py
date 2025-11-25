@@ -90,9 +90,11 @@ class InvaCogniFFN(nn.Module):
                 #exit(0)
                 ls.append(nn.Linear(ll[0], ll[1]))
             else:
-                ls.append(_map[config.hidden_act]())
-
-
+                if ll.startswith("dropout-"):
+                    temp = ll.split("-")
+                    ls.append(_map[temp[0]](float(temp[1])))
+                else:
+                    ls.append(_map[ll]())
 
         self.FFN = nn.Sequential(*ls)
     def forward(self, x):

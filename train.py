@@ -32,6 +32,8 @@ import numpy as np
 import wandb
 import gc
 import math
+from safetensors.torch import load_file
+
 
 # TODO: IMPORTANT (DO THIS IN THE PROCESSOR CLASS OR AFTER PROCESSOR CLASS IN TRAINING LOOP)
     # IF USE THE torch.nn.MultiheadAttention then need to flip the 
@@ -279,17 +281,31 @@ def do_one_fold(train_samples, test_samples, fold_num):
         data_collator=TaukdialDataset_collate_fn,
         #compute_loss_fun=compute_loss,
         compute_metrics=compute_metrics_fn,
-        callbacks=[EarlyStoppingCallback(early_stopping_patience=2,
+        #callbacks=[EarlyStoppingCallback(early_stopping_patience=4,
                                          #early_stopping_threshold=0.001,
-                                         )],
+                                         #)],
     )
 
     trainer.train()
 
-    '''# save final model 
-    if trainer.is_world_process_zero() and (fold_num+1) == training_args.num_fold:
-        trainer.save_model(f"./{training_args.output_dir}")
-        processor.save_pretrained(f"./{training_args.output_dir}")'''
+    # load best model. For some reason, the load best model arg in hf trainer 
+    # does not work as it is supposed to. It does not load the best model checkpoint 
+    # but still use the model at the end of training.
+    # Therefore, need to do this manually (this method of
+    # manual loading the best model checkpoint only work if there is only 1 model 
+    # checkpoint at that location and that check point is the best model checkpoint
+    # (this can be done by using save_total_limit=1 and save_strategy=best))
+    if trainer.is_world_process_zero():
+        #print("4444444444444444")
+        all_items = os.listdir(training_args.output_dir)
+        for i in all_items:
+            if i.startswith("checkpoint-"):
+                #print("333333333333")
+                state_dict = load_file(f"{training_args.output_dir}/{i}/model.safetensors")  # returns a dictionary of tensors
+                model.load_state_dict(state_dict)
+                break
+        #trainer.save_model(f"./{training_args.output_dir}")
+        #processor.save_pretrained(f"./{training_args.output_dir}")
 
     return model, trainer.is_world_process_zero()
 
@@ -453,7 +469,6 @@ def evaluate(model, dataset, is_train_dataset, fold_num):
             f.write(summary)
     return tc_f1, tc_bal_acc, m_f1, m_bal_acc, f_f1, f_bal_acc, e_f1, e_bal_acc, c_f1, c_bal_acc, temp_audio_out_list, temp_input_ids_out_list, mask_m, mask_f, mask_e, mask_c
 
-    
 if __name__ == "__main__":
     set_seed(training_args.seed)
 
@@ -469,8 +484,34 @@ if __name__ == "__main__":
     dataset = pandas.read_csv(training_args.dataset_path)
     if training_args.max_dataset_size > 0:
         dataset = dataset.iloc[:training_args.max_dataset_size]
+        val_samples = None
     elif training_args.max_dataset_size == 0:
         raise ValueError("the max_dataset_size arg can not be 0")
+    else:
+        counts = {
+            ('english', 'M'): 5,
+            ('english', 'F'): 7,
+            ('chinese', 'M'): 5,
+            ('chinese', 'F'): 6,
+        }
+
+        # function that samples up to n rows from each group
+        def sample_up_to(g):
+            n = counts.get((g.name[0], g.name[1]), 0)
+            return g.sample(n=min(n, len(g)), replace=False, random_state=training_args.seed)
+
+        val_samples = (dataset
+                    .groupby(['language', 'sex'], group_keys=False)
+                    .apply(sample_up_to))
+        
+        # remaining dataset
+        dataset = dataset.drop(index=val_samples.index)
+        val_samples = [val_samples.iloc[i] for i in range(len(val_samples))]
+        val_samples = TaukdialDataset(val_samples,
+                                processor=processor,
+                                audio_parent_path=training_args.audio_parent_path,
+                                image_parent_path=training_args.image_parent_path,)
+
     '''
     map_all = {
                 "english_M_NC":0,
@@ -557,7 +598,7 @@ if __name__ == "__main__":
         figures.append(fig)
         axes_list.append(ax)
 
-    training_args.run_name = f"{training_args.run_name}/fold_{0}"
+    training_args.run_name = f"{training_args.run_name}_fold_{0}"
     training_args.output_dir = f"{training_args.output_dir}/fold_{0}"
     # for each fold
     for n, (train_index, test_index) in enumerate(skf.split(dataset, labels)):
@@ -581,7 +622,8 @@ if __name__ == "__main__":
                     image_parent_path=training_args.image_parent_path,
                     )
         
-        model, is_main_process = do_one_fold(train_samples, test_samples, n)
+        val_samples = val_samples if val_samples is not None else test_samples
+        model, is_main_process = do_one_fold(train_samples, val_samples, n)
 
         if is_main_process:
             os.makedirs(f"./{training_args.output_dir}", exist_ok=True)
