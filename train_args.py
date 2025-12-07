@@ -17,3 +17,6 @@ class trainArgs(TrainingArguments):
     wandb_project_name: str = 'InvaCogni'
     max_dataset_size: int = -1 # -1 means use full size.
                             # > 0 means dataset of that many samples
+    aug_audio: bool = False
+    aug_img: bool = False
+    remove_punc_in_text: bool = False
