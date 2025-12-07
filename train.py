@@ -5,6 +5,7 @@ from train_args import trainArgs
 from InvaCogni.modeling_invacogni import InvaCogni
 from InvaCogni.configuration_invacogni import InvaCogniConfig
 from InvaCogni.processing_invacogni import InvaCogniProcessor
+import unicodedata
 #from transformers import RobertaTokenizer, RobertaModel
 
 #from PIL import Image
@@ -55,6 +56,51 @@ parser = HfArgumentParser((trainArgs, InvaCogniConfig.to_dataclass()))
 # Parse arguments from CLI
 training_args, model_config_args = parser.parse_args_into_dataclasses()
 
+class InvaCogniTrainer(Trainer):
+    def training_step(
+        self,
+        model,
+        inputs,
+        num_items_in_batch=None,
+    ) -> torch.Tensor:
+
+        # get the current training step
+        current_step = self.state.global_step
+
+        # get the max training step and store it to the custom _max_train_steps attribute
+        # this avoid having to call self.get_train_dataloader() every time which will 
+        # create the dataloader each time it is being called. 
+        if not hasattr(self, "_max_train_steps"):
+            if self.args.max_steps and self.args.max_steps > 0:
+                self._max_train_steps = self.args.max_steps
+            else:
+                train_dl = self.get_train_dataloader()
+                self._max_train_steps = len(train_dl) * self.args.num_train_epochs
+                
+        max_steps = max(1, self._max_train_steps)
+
+        # In pytorch DDP, the model is wrapped in another DDP model object and 
+        # will actually model be at model.module attribute. 
+        wrapped_model = model.module if hasattr(model, "module") else model
+        
+
+        #Compute GRL lambda schedule: λ(p) = 2 / (1 + exp(-γ p)) - 1
+        gamma = wrapped_model.config.loss_gamma
+        #print(f"rrrrrrrrr {self._max_train_steps}")
+        p = current_step / max_steps
+        lambda_val = 2.0 / (1.0 + math.exp(-gamma * p)) - 1.0
+
+        # Update model.config.loss_lambda
+        wrapped_model.config.loss_lambda = lambda_val
+        #print(f"dddddddddddd {wrapped_model.config.loss_lambda}")
+
+        # 5. Continue the normal HF training step
+        return super().training_step(
+            model=model,
+            inputs=inputs,
+            num_items_in_batch=num_items_in_batch
+        )
+
 '''
 class lossCallback(TrainerCallback):
     def on_log(self, args: TrainingArguments,
@@ -77,6 +123,8 @@ class TaukdialDataset(Dataset):
     def __init__(self, ds, processor,
                  audio_parent_path="./dataset/taukadial/train/",
                  image_parent_path="./dataset/images/images/",
+                 aug_img=False,
+                 aug_audio=False,
                  ):
         
         #self.df = pandas.read_csv(ds_path)
@@ -89,6 +137,14 @@ class TaukdialDataset(Dataset):
         self.label_map = {"MCI": 1, "NC":0}
         self.gender_map = {"M": 1, "F":0}
         self.language_map = {"english": 1, "chinese":0}
+        self.aug_img=aug_img
+        self.aug_audio=aug_audio
+
+    def remove_punctuation(self, text):
+        return ''.join(
+            ch for ch in text
+            if not unicodedata.category(ch).startswith('P')
+        )
  
     def __len__(self):
         return len(self.ds)
@@ -99,6 +155,7 @@ class TaukdialDataset(Dataset):
 
         audio_file = self.audio_parent_path+row["audio_file"]
         text = row['text'].strip()
+        text = self.remove_punctuation(text) if training_args.remove_punc_in_text else text
         image_file = self.image_parent_path+row['image']
         label = self.label_map[row['label']]
         gender = self.gender_map[row['sex']]
@@ -111,6 +168,8 @@ class TaukdialDataset(Dataset):
                            gender_dc_labels=[gender],
                            language_dc_labels=[language],
                            target_sampling_rate=16000,
+                           aug_img=self.aug_img,
+                           aug_audio=self.aug_audio,
                            )
     
 def TaukdialDataset_collate_fn(batch):
@@ -272,7 +331,7 @@ def do_one_fold(train_samples, test_samples, fold_num):
 
     #print(model)
 
-    trainer = Trainer(
+    trainer = InvaCogniTrainer(
         model=model,
         args=training_args,
         train_dataset=train_samples,
@@ -303,6 +362,7 @@ def do_one_fold(train_samples, test_samples, fold_num):
                 #print("333333333333")
                 state_dict = load_file(f"{training_args.output_dir}/{i}/model.safetensors")  # returns a dictionary of tensors
                 model.load_state_dict(state_dict)
+                print(f"loaded model from the checkpoint {training_args.output_dir}/{i}/model.safetensors")
                 break
         #trainer.save_model(f"./{training_args.output_dir}")
         #processor.save_pretrained(f"./{training_args.output_dir}")
@@ -482,6 +542,7 @@ if __name__ == "__main__":
                                 tokenizer=tokenizer,)
 
     dataset = pandas.read_csv(training_args.dataset_path)
+    val_samples = None
     if training_args.max_dataset_size > 0:
         dataset = dataset.iloc[:training_args.max_dataset_size]
         val_samples = None
@@ -510,8 +571,8 @@ if __name__ == "__main__":
         val_samples = TaukdialDataset(val_samples,
                                 processor=processor,
                                 audio_parent_path=training_args.audio_parent_path,
-                                image_parent_path=training_args.image_parent_path,)
-
+                                image_parent_path=training_args.image_parent_path,
+                                aug_img=False, aug_audio=False,)    
     '''
     map_all = {
                 "english_M_NC":0,
@@ -602,7 +663,6 @@ if __name__ == "__main__":
     training_args.output_dir = f"{training_args.output_dir}/fold_{0}"
     # for each fold
     for n, (train_index, test_index) in enumerate(skf.split(dataset, labels)):
-        
         training_args.run_name = training_args.run_name[:-1] + str(n)
         training_args.output_dir = training_args.output_dir[:-1] + str(n)
         
@@ -615,11 +675,14 @@ if __name__ == "__main__":
                               processor=processor,
                               audio_parent_path=training_args.audio_parent_path,
                               image_parent_path=training_args.image_parent_path,
+                              aug_img=training_args.aug_img,
+                              aug_audio=training_args.aug_audio,
                               )
         test_samples = TaukdialDataset(ds=test_samples,
                     processor=processor,
                     audio_parent_path=training_args.audio_parent_path,
                     image_parent_path=training_args.image_parent_path,
+                    aug_img=False, aug_audio=False,
                     )
         
         val_samples = val_samples if val_samples is not None else test_samples
@@ -667,8 +730,6 @@ if __name__ == "__main__":
         report_to = training_args.report_to[0] if isinstance(training_args.report_to, list) else training_args.report_to
         if report_to == "wandb" or report_to == "all":
             wandb.finish()
-        if n == 1:
-            exit(0)
 
     if is_main_process:
         tc_f1 /= training_args.num_fold
