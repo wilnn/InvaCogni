@@ -7,24 +7,30 @@ import ast
 
 class InvaCogniConfig(PretrainedConfig):
     model_type = "InvaCogni" # Must be different from existing model types
-    def __init__(self, loss_lambda=0.5,
+    def __init__(self,
+                 loss_lambda=None,
+                 loss_gamma=10,
                  hidden_act="gelu",
                  hidden_size=768,
                  #num_domains=4,
-                 num_attention_heads=12,
-                 audio_FFN="[[512, 3072], 'gelu', 'dropout-0.1', [3072, 768], 'gelu']",
+                 num_attention_heads=8,
+                 audio_FFN="[[512, 3072], 'gelu', 'dropout-0.3', [3072, 768], 'gelu']",
                  gender_domain_classifier_FFN="[[512, 3072], 'gelu', [3072, 512], 'gelu', [512, 1]]",
                  language_domain_classifier_FFN="[[1280, 3072], 'gelu', [3072, 768], 'gelu', [768, 1]]",
-                 task_classifier_FFN="[[1536, 3072], 'gelu', 'dropout-0.05', [3072, 768], 'gelu', 'dropout-0.05', [768, 384], 'gelu', [384, 1]]",
-                 cross_attn_FFN="[[768, 3072], 'gelu', 'dropout-0.1', [3072, 768], 'gelu']",
+                 task_classifier_FFN="[[1536, 3072], 'gelu', 'dropout-0.3', [3072, 768], 'gelu', 'dropout-0.3', [768, 384], 'gelu', [384, 1]]",
+                 cross_attn_FFN="[[768, 3072], 'gelu', 'dropout-0.5', [3072, 768], 'gelu']",
                  grl_lambda=1, # will be turned into negative numnber in the code
                  vision_encoder_path="google/siglip-base-patch16-512", # OR use google/siglip-so400m-patch14-384
                  text_encoder_path='google-bert/bert-base-multilingual-uncased', # OR use multilingual roberta
                  audio_encoder_path='openai/whisper-base', # OR use facebook/wav2vec2-large-xlsr-53 or smaller: facebook/wav2vec2-base-960h which is english only. these take too much ram
-                 attention_dropout=0.1,
+                 attention_dropout=0.35,
                  **kwargs,
                  ):
         super().__init__(**kwargs)
+        if loss_lambda is not None and loss_gamma is not None:
+            raise AssertionError("Can only specify either loss_lambda(fix loss lambda rate) or loss_gamma(changing loss lambda slowly from 0 to 1) not both")
+        
+        self.loss_gamma=loss_gamma
         self.num_attention_heads = num_attention_heads
         self.hidden_size=hidden_size
         self.hidden_act = hidden_act
