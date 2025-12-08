@@ -94,7 +94,7 @@ class InvaCogniTrainer(Trainer):
         wrapped_model.config.loss_lambda = lambda_val
         #print(f"dddddddddddd {wrapped_model.config.loss_lambda}")
 
-        # 5. Continue the normal HF training step
+        # Continue the normal HF training step
         return super().training_step(
             model=model,
             inputs=inputs,
@@ -428,7 +428,7 @@ def evaluate(model, dataset, is_train_dataset, fold_num):
             # chinese, MCI, NC)
             # ACCUMUATE THE RESULT ACROSS ALL FOLDS AND TAKE AVERAGE
 
-        # TODO:
+        # TODO: DONE
             # plot the data reprensetation on 2d graph with T-SNE
             # also write script to plot it before any training
             # plot on the same plot for every fold so that the plots
@@ -573,45 +573,7 @@ if __name__ == "__main__":
                                 audio_parent_path=training_args.audio_parent_path,
                                 image_parent_path=training_args.image_parent_path,
                                 aug_img=False, aug_audio=False,)    
-    '''
-    map_all = {
-                "english_M_NC":0,
-                "english_M_MCI":1,
-                "english_F_NC":2,
-                "english_F_MCI":3,
-                "chinese_M_NC": 4,
-                "chinese_M_MCI":5,
-                "chinese_F_NC":6,
-                "chinese_F_MCI":7,
-                }
-    map_gen = {
-                "M_NC":0,
-                "M_MCI":1,
-                "F_NC":2,
-                "F_MCI":3,
-            }
-    map_lang = {
-                "english_NC":0,
-                "english_MCI":1,
-                "chinese_NC":2,
-                "chinese_MCI":3,
-            }
-    map_label = {
-        "MCI": 1,
-        "NC": 0,
-    }
 
-    labels = []
-    for i in range(len(dataset)):
-        if not training_args.dc_gender and not training_args.dc_language:
-            labels.append(map_label[dataset.iloc[i]['label']])
-        elif training_args.dc_gender and training_args.dc_language:
-            labels.append(map_all[f"{dataset.iloc[i]['language']}_{dataset.iloc[i]['sex']}_{dataset.iloc[i]['label']}"])
-        elif training_args.dc_gender and not training_args.dc_language:
-            labels.append(map_gen[f"{dataset.iloc[i]['sex']}_{dataset.iloc[i]['label']}"])
-        else:
-            labels.append(map_lang[f"{dataset.iloc[i]['language']}_{dataset.iloc[i]['label']}"])
-    '''
     map_label = {
         "english_M":0,
         "english_F":1,
