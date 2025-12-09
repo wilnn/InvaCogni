@@ -15,6 +15,7 @@
       </ol></li>
     </ol></li>
     <li><a href="#Results">Results</a><ol>
+      <li><a href="#Graphs">Graphs</a></li>
       <li><a href="#Performance-Table">Performance Table</a></li>
     </ol></li>
     <li><a href="#References">References</a></li>
@@ -102,6 +103,8 @@ __Train the model for this setting by running:__
 
 ## Results
 InvaCogni is evaluated and compared with the baseline models from CogniVoice using stratified k-fold cross validation (10 folds) with the average Unweighted Average Recall (UAR) and F1 score across folds. Additionally, to evaluate whether the GRL has successfully made the data representation from different groups become domain invariant, I use t-SNE to plot the audio data representations before and after training to compare.<br>
+
+### Graphs
 <img alt="image" src="./assets/m_f_au_em.png" />
 <br>Figure 6. The audio embeddings for male and female plotted using t-SNE before any training. Here, the male and female embeddings are nicely mixed, which is expected since the Whisper encoder that I use is trained for multilingual speech-to-text transcription, which does not distinguish whether the speaker is male or female.
 
@@ -121,7 +124,7 @@ Figure 7. The audio embeddings that are produced by the audio encoder for Englis
 <br>Figure 11. The English and Chinese embeddings output from the text encoder after it is trained in setting 3 (with GRL for English and Chinese domains). This figure shows that the embeddings of English and Chinese are mixed, which indicates that their domain differences have been mitigated.<br>
 
 ### Performance Table
-<br><br><img alt="image" src="./assets/performance_table.png" />
+<img alt="image" src="./assets/performance_table.png" />
 Table 1. The performance of InvaCogni compared to the baseline models reported in [2]. The results are averaged across 10 folds. The highest score in each column is bold.
 
 From Table 1, the InvaCogni model with no GRL has the highest performance in most columns. Most of the models perform better on male than female. InvaCogni in 3 training settings and CogniVoice perform better on Chinese and English in terms of F1 score, and almost all models perform better on Chinese than English in terms of AUR score. When GRL is applied, the overall performance of InvaCogni drops by about 4%, but the performance gap between male and female groups is reduced to only a 2% difference for UAR and a 0.6% difference for F1, and the model’s performance gap between English and Chinese speakers reduces to a 7.1% difference for the UAR score. I believe the reason that applying GRL on language does not work as well as on genders is because the male and female embeddings are more nicely mixed before training, as shown in Figure 6, so it has an easier time making male and female embeddings become domain invariant, while the English and Chinese embeddings are separated before training, as shown in Figure 7 and Figure 8, so it has a harder time reducing the domain differences. Also, I believe the reason that using GRL in settings 2 and 3 makes the performance drop by 4% compared to when not using it is because the audio and text encoders receive the gradients from 2 separate paths for 2 different tasks, which makes the main task (MCI classifying) have a harder time adjusting and adapting to the changes in embeddings from the encoders.
