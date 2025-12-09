@@ -70,7 +70,7 @@ I use the image encoder of __siglip-base__ [7] as the image encoder of this mode
 <br><br>The text encoder and image encoder is frozen during training.<br><br>
 
 
-__Train the model for this setting by running:__
+__Train the model for setting 1 by running:__
 ```
 ./linux_run_train_no_dc.sh
 ```
@@ -83,7 +83,7 @@ __Train the model for this setting by running:__
 
 With $\gamma$ for the equation (1) set to 2, which gives the best result during experiments.<br><br>
 
-__Train the model for this setting by running:__
+__Train the model for setting 2 by running:__
 ```
 ./linux_run_train_dc_gen.sh
 ```
@@ -96,7 +96,7 @@ Figure 5. The architecture of InvaCogni when using GRL to make English and Chine
 
 With $\gamma$ for the equation (1) set to 5, which gives the best result during experiments.<br><br>
 
-__Train the model for this setting by running:__
+__Train the model for setting 3 by running:__
 ```
 ./linux_run_train_dc_lang.sh
 ```
