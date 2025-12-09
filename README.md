@@ -7,14 +7,16 @@
     <li><a href="#Setup">Setup</a></li>
     <li><a href="#Dataset">Dataset</a></li>
     <li><a href="#Method">Method</a><ol>
-      <li><a href="#Gradient-Reversal-Layer-(GRL)">Gradient Reversal Layer (GRL)</a></li>
+      <li><a href="#Gradient-Reversal-Layer-GRL">Gradient Reversal Layer (GRL)</a></li>
       <li><a href="#Training">Training</a><ol>
         <li><a href="#Setting-1-InvaCogni-without-GRL">setting 1: The InvaCogni model without GRL</a></li>
         <li><a href="#Setting-2-InvaCogni-with-GRL-for-male-and-female-domains">setting 2: InvaCogni with GRL for male and female domains</a></li>
         <li><a href="#Setting-3-InvaCogni-with-GRL-for-English-and-Chinese-domains">Setting 3: InvaCogni with GRL for English and Chinese domains</a></li>
       </ol></li>
     </ol></li>
-    <li><a href="#Results">Results</a></li>
+    <li><a href="#Results">Results</a><ol>
+      <li><a href="#Performance-Table">Performance Table</a></li>
+    </ol></li>
     <li><a href="#References">References</a></li>
   </ol>
 </details>
@@ -118,6 +120,7 @@ Figure 7. The audio embeddings that are produced by the audio encoder for Englis
 <br><img alt="image" src="./assets/en_cn_text_em2.png" />
 <br>Figure 11. The English and Chinese embeddings output from the text encoder after it is trained in setting 3 (with GRL for English and Chinese domains). This figure shows that the embeddings of English and Chinese are mixed, which indicates that their domain differences have been mitigated.<br>
 
+### Performance Table
 <br><br><img alt="image" src="./assets/performance_table.png" />
 Table 1. The performance of InvaCogni compared to the baseline models reported in [2]. The results are averaged across 10 folds. The highest score in each column is bold.
 
