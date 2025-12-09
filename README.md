@@ -9,7 +9,7 @@
     <li><a href="#Method">Method</a><ol>
       <li><a href="#Gradient-Reversal-Layer-(GRL)">Gradient Reversal Layer (GRL)</a></li>
       <li><a href="#Training">Training</a><ol>
-        <li><a href="#setting-1:-The-InvaCogni-model-without-GRL">setting 1: The InvaCogni model without GRL</a></li>
+        <li><a href="#setting-1-The-InvaCogni-model-without-GRL">setting 1: The InvaCogni model without GRL</a></li>
       </ol></li>
     </ol></li>
     <li><a href="#How-It-Works">How It Works</a></li>
