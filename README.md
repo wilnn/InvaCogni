@@ -5,6 +5,7 @@
   <ol>
     <li><a href="#Introduction">Introduction</a></li>
     <li><a href="#Setup">Setup</a></li>
+    <li><a href="#Dataset">Dataset</a></li>
     <li><a href="#Method">Method</a><ol>
       <li><a href="#Gradient-Reversal-Layer-(GRL)">Gradient Reversal Layer (GRL)</a></li>
       <li><a href="#Training">Training</a><ol>
@@ -13,7 +14,6 @@
         <li><a href="#Setting-3-InvaCogni-with-GRL-for-English-and-Chinese-domains">Setting 3: InvaCogni with GRL for English and Chinese domains</a></li>
       </ol></li>
     </ol></li>
-    <li><a href="#HDataset">Dataset</a></li>
     <li><a href="#Results">Results</a></li>
     <li><a href="#References">References</a></li>
   </ol>
@@ -33,6 +33,18 @@ conda activate InvaCogni
 cd InvaCogni
 pip install -r requirements.txt
 ```
+
+## Dataset
+The model is trained using the <a href="https://talkbank.org/dementia/TAUKADIAL/index.html">Taukdial</a> dataset from <a href="https://talkbank.org/dementia/">DementiaBank</a>, which contains speech data from 129 patients. Each patient is asked to describe 3 images, which create 387 speech samples in the dataset. In detail, it has:
+1.	Audio files of the patients describing the images (1 minute per file on average)
+2.	Sex: 39% are male and 61% are female. 57% of females have MCI, and 58% of males have MCI.
+3.	Age: range from 61 to 87. The average age is 73.
+4.	Mini-Mental State Examination (MMSE) score: MMSE is a questionnaire test that is used to assess cognitive functions like memory and attention. The higher the score, the better (max at 30). In the dataset, the score ranges from 13 to 30, with the average score being 27. This information is not used to train the model.
+5.	Label: MCI vs NC (Normal Control). 57% of the samples have MCI.
+6.	Language: English and Chinese. 52% are Chinese samples, and 48% are English samples. 49% of Chinese speakers have MCI, and 66% of English speakers have MCI.
+
+Additionally, the authors of CogniVoice [2] collected 6 images and labeled the images that each patient describes. The image has an average size of 656x516. They also transcribed the audio file to text. There are 1509 unique words for English, with each English sample having an average of 142 words. For Chinese, there are 2533 unique words, with each sample having an average of 87 words.
+
 
 ## Method
 ### Gradient Reversal Layer (GRL)
@@ -85,17 +97,6 @@ __Train the model for this setting by running:__
 ```
 ./linux_run_train_dc_lang.sh
 ```
-
-## Dataset
-The model is trained using the <a href="https://talkbank.org/dementia/TAUKADIAL/index.html">Taukdial</a> dataset from <a href="https://talkbank.org/dementia/">DementiaBank</a>, which contains speech data from 129 patients. Each patient is asked to describe 3 images, which create 387 speech samples in the dataset. In detail, it has:
-1.	Audio files of the patients describing the images (1 minute per file on average)
-2.	Sex: 39% are male and 61% are female. 57% of females have MCI, and 58% of males have MCI.
-3.	Age: range from 61 to 87. The average age is 73.
-4.	Mini-Mental State Examination (MMSE) score: MMSE is a questionnaire test that is used to assess cognitive functions like memory and attention. The higher the score, the better (max at 30). In the dataset, the score ranges from 13 to 30, with the average score being 27. This information is not used to train the model.
-5.	Label: MCI vs NC (Normal Control). 57% of the samples have MCI.
-6.	Language: English and Chinese. 52% are Chinese samples, and 48% are English samples. 49% of Chinese speakers have MCI, and 66% of English speakers have MCI.
-
-Additionally, the authors of CogniVoice [2] collected 6 images and labeled the images that each patient describes. The image has an average size of 656x516. They also transcribed the audio file to text. There are 1509 unique words for English, with each English sample having an average of 142 words. For Chinese, there are 2533 unique words, with each sample having an average of 87 words.
 
 ## Results
 InvaCogni is evaluated and compared with the baseline models from CogniVoice using stratified k-fold cross validation (10 folds) with the average Unweighted Average Recall (UAR) and F1 score across folds. Additionally, to evaluate whether the GRL has successfully made the data representation from different groups become domain invariant, I use t-SNE to plot the audio data representations before and after training to compare.<br>
