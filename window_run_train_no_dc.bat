@@ -12,7 +12,7 @@ set DECISION_THRESHOLD=0.5
 set WANDB_PROJECT_NAME=InvaCogni
 set MAX_DATASET_SIZE=-1
 set BATCH_SIZE=4
-set NUM_EPOCHS=20
+set NUM_EPOCHS=12
 
 :: Complex FFN strings (keep as-is; will be passed quoted to the script)
 set AUDIO_FFN=[[512, 3072], 'gelu', 'dropout-0.3', [3072, 768], 'gelu']
