@@ -48,8 +48,6 @@ class InvaCogniProcessor(ProcessorMixin):
                     transforms.RandomApply([transforms.GaussianBlur(kernel_size=5, sigma=(0.1, 1.0))], p=0.2),
                     # occasionally convert to grayscale very rarely
                     #transforms.RandomGrayscale(p=0.02),
-                    # identity to ensure output remains PIL (no ToTensor here)
-                    transforms.Lambda(lambda img: img)
                 ])
     def audio_augment(self, x, sr,
                    p_noise=0.5, snr_range=(12,24),

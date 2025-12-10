@@ -62,3 +62,4 @@ accelerate launch train.py ^
     --do_train ^
     --do_eval ^
     --num_train_epochs %NUM_EPOCHS% ^
+    --dataloader_num_workers 2 ^
