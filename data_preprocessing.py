@@ -26,8 +26,8 @@ def create_dataset():
     df = pd.DataFrame(columns=columns)
 
     # Load existing data
-    df_parquet = pd.read_parquet("dataset/taukadial/transcription/translation_train.parquet")
-    df_csv = pd.read_csv("dataset/images/label.csv")
+    df_parquet = pd.read_parquet("dataset/taukadial/taukadial/transcription/translation_train.parquet")
+    df_csv = pd.read_csv("dataset/taukadial/images/label.csv")
 
     images = ["", "image-1.jpg", "image-2.jpg", "image-3.jpg",
             "image-4.png", "image-5.png", "image-6.png"]
@@ -58,7 +58,7 @@ def create_dataset():
             images[img_idx],
             row_csv["dx"]
         ]
-    df.to_csv('dataset/final_combined_dataset.csv', index=False)  # index=False prevents saving the row numbers
+    df.to_csv('dataset/taukadial/final_combined_dataset.csv', index=False)  # index=False prevents saving the row numbers
 
     return df
         
@@ -81,7 +81,7 @@ def plot_distribution(df):
         plt.ylabel("Count")
         plt.xticks(rotation=0)
         
-        plt.savefig(f"dataset/{n}_distribution.png", dpi=300)
+        plt.savefig(f"dataset/taukadial/{n}_distribution.png", dpi=300)
         plt.show()
         plt.close()
     
@@ -96,7 +96,7 @@ def plot_distribution(df):
                 plt.ylabel('Frequency')
                 plt.title(f'{n} Distribution for {nn.capitalize()}')
                 
-                plt.savefig(f"dataset/{n}_{nn}_distribution.png", dpi=300)
+                plt.savefig(f"dataset/taukadial/{n}_{nn}_distribution.png", dpi=300)
                 plt.show()
                 plt.close()
 
@@ -106,7 +106,7 @@ def plot_distribution(df):
             plt.ylabel('Frequency')
             plt.title(f'{n} Distribution')
 
-            plt.savefig(f"dataset/{n}_distribution.png", dpi=300)
+            plt.savefig(f"dataset/taukadial/{n}_distribution.png", dpi=300)
             plt.show()
             plt.close()
 
@@ -135,7 +135,7 @@ def plot_distribution_against_label(df):
         plt.xticks(rotation=0)
         plt.legend(title="Label")
 
-        plt.savefig(f"dataset/{n}_NC_and_MCI_distribution.png", dpi=300)
+        plt.savefig(f"dataset/taukadial/{n}_NC_and_MCI_distribution.png", dpi=300)
         plt.show()
         plt.close()
 
@@ -148,7 +148,7 @@ def plot_pos_pie(pos_counts, lang, title="POS Distribution"):
 
     plt.title(lang.capitalize() + " "+ title)
 
-    plt.savefig(f"dataset/{lang}_pos_distribution.png", dpi=300)
+    plt.savefig(f"dataset/taukadial/{lang}_pos_distribution.png", dpi=300)
     plt.show()
     plt.close()
 
@@ -217,7 +217,7 @@ def analyze_text(df):
 
 
 def analyze_audio():
-    audio_folder = "dataset/taukadial/train"
+    audio_folder = "dataset/taukadial/taukadial/train"
     lengths = []
     for file_name in os.listdir(audio_folder):
         if file_name.endswith(".wav"):  # adjust extension if needed
@@ -232,7 +232,7 @@ def analyze_audio():
 def main():
     df = create_dataset()
     #print(len(df))
-    df = pd.read_csv("dataset/final_combined_dataset.csv")
+    df = pd.read_csv("dataset/taukadial/final_combined_dataset.csv")
     print(f"\033[32mAverage age: {df['age'].mean()}\033[0m")
     print(f"\033[32mAge range from {df['age'].min()} to {df['age'].max()}\033[0m")
     print(f"\033[32mAverage MMSE: {df['mmse'].mean()}\033[0m")
