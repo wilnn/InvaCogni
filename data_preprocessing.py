@@ -58,7 +58,7 @@ def create_dataset():
             images[img_idx],
             row_csv["dx"]
         ]
-    df.to_csv('dataset/combined_dataset.csv', index=False)  # index=False prevents saving the row numbers
+    df.to_csv('dataset/final_combined_dataset.csv', index=False)  # index=False prevents saving the row numbers
 
     return df
         
@@ -80,8 +80,9 @@ def plot_distribution(df):
         plt.xlabel(n)
         plt.ylabel("Count")
         plt.xticks(rotation=0)
-        plt.show()
+        
         plt.savefig(f"dataset/{n}_distribution.png", dpi=300)
+        plt.show()
         plt.close()
     
     l = ["Age", "MMSE"]
@@ -94,8 +95,9 @@ def plot_distribution(df):
                 plt.xlabel(f'{n}')
                 plt.ylabel('Frequency')
                 plt.title(f'{n} Distribution for {nn.capitalize()}')
-                plt.show()
+                
                 plt.savefig(f"dataset/{n}_{nn}_distribution.png", dpi=300)
+                plt.show()
                 plt.close()
 
         else:
@@ -103,8 +105,9 @@ def plot_distribution(df):
             plt.xlabel(f'{n}')
             plt.ylabel('Frequency')
             plt.title(f'{n} Distribution')
-            plt.show()
+
             plt.savefig(f"dataset/{n}_distribution.png", dpi=300)
+            plt.show()
             plt.close()
 
 def plot_distribution_against_label(df):
@@ -131,8 +134,9 @@ def plot_distribution_against_label(df):
         plt.ylabel("Count")
         plt.xticks(rotation=0)
         plt.legend(title="Label")
-        plt.show()
+
         plt.savefig(f"dataset/{n}_NC_and_MCI_distribution.png", dpi=300)
+        plt.show()
         plt.close()
 
 def plot_pos_pie(pos_counts, lang, title="POS Distribution"):
@@ -143,8 +147,9 @@ def plot_pos_pie(pos_counts, lang, title="POS Distribution"):
     plt.pie(sizes, labels=labels, autopct='%1.1f%%', textprops={'fontsize': 8}, startangle=140)
 
     plt.title(lang.capitalize() + " "+ title)
-    plt.show()
+
     plt.savefig(f"dataset/{lang}_pos_distribution.png", dpi=300)
+    plt.show()
     plt.close()
 
 
@@ -227,7 +232,7 @@ def analyze_audio():
 def main():
     df = create_dataset()
     #print(len(df))
-    df = pd.read_csv("dataset/combined_dataset.csv")
+    df = pd.read_csv("dataset/final_combined_dataset.csv")
     print(f"\033[32mAverage age: {df['age'].mean()}\033[0m")
     print(f"\033[32mAge range from {df['age'].min()} to {df['age'].max()}\033[0m")
     print(f"\033[32mAverage MMSE: {df['mmse'].mean()}\033[0m")
@@ -237,7 +242,7 @@ def main():
     print("\033[32m##################\033[0m")
     analyze_text(df)
     # Save as CSV
-    #df.to_csv("dataset/combined_dataset.csv", index=False)
+    #df.to_csv("dataset/final_combined_dataset.csv", index=False)
     print("\033[32mAverage image size: 656x516\033[0m")
     print("\033[32m##################\033[0m")
     analyze_audio()
