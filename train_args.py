@@ -7,6 +7,7 @@ class trainArgs(TrainingArguments):
     train_text_encoder: bool = False # the encoder part of the text encoder
                                 #(the pooler layer is always trained)
     train_audio_encoder: bool = False
+    train_image_encoder: bool = False
     dataset_path: str = "./dataset/combined_dataset.csv"
     audio_parent_path: str ="./dataset/taukadial/train/",
     image_parent_path: str ="./dataset/images/images/",
@@ -20,3 +21,5 @@ class trainArgs(TrainingArguments):
     aug_audio: bool = False
     aug_img: bool = False
     remove_punc_in_text: bool = False
+    model_class: str = 'InvaCogni'
+    start_from_no_dc: str = None

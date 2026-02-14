@@ -2,7 +2,7 @@ from torch.utils.data import Dataset, DataLoader
 from sklearn.model_selection import StratifiedKFold
 from train_args import trainArgs
 
-from InvaCogni.modeling_invacogni import InvaCogni
+from InvaCogni.modeling_invacogni import InvaCogni, InvaCogni_2TB, InvaCogni_no_TB
 from InvaCogni.configuration_invacogni import InvaCogniConfig
 from InvaCogni.processing_invacogni import InvaCogniProcessor
 import unicodedata
@@ -55,6 +55,12 @@ parser = HfArgumentParser((trainArgs, InvaCogniConfig.to_dataclass()))
 
 # Parse arguments from CLI
 training_args, model_config_args = parser.parse_args_into_dataclasses()
+
+model_class_dict = {
+    "InvaCogni": InvaCogni,
+    "InvaCogni_2TB": InvaCogni_2TB,
+    "InvaCogni_no_TB": InvaCogni_no_TB,
+}
 
 class InvaCogniTrainer(Trainer):
     def training_step(
@@ -298,15 +304,23 @@ def compute_metrics_fn(p: EvalPrediction):
 def do_one_fold(train_samples, test_samples, fold_num):
 
     invacogni_config = InvaCogniConfig(**vars(model_config_args))
+    print("\n#################################")
+    print("#################################\n")
 
     vision_encoder = AutoModel.from_pretrained(invacogni_config.vision_encoder_path).vision_model
-    for param in vision_encoder.parameters():
-        param.requires_grad = False
-    print(f"loaded and froze the vision encoder: {type(vision_encoder)}")
+    print(f"loaded the vision encoder: {type(vision_encoder)}")
+    #print("44444444444")
+    if not training_args.train_image_encoder:
+        #print("5555555555555555")
+        for param in vision_encoder.parameters():
+            param.requires_grad = False
+        print(f"froze the vision encoder: {type(vision_encoder)}")
     
     text_encoder = AutoModel.from_pretrained(invacogni_config.text_encoder_path)
+    #print("666666666")
     print(f"loaded text encoder: {type(text_encoder)}")
-    if not training_args.train_text_encoder and not training_args.dc_language:
+    if not training_args.train_text_encoder and not training_args.dc_language and not training_args.dc_gender:
+        #print("7777777777")
         for param in text_encoder.encoder.parameters():
             param.requires_grad = False
         print(f"froze the text encoder (except pooler layer) because train_text_encoder={training_args.train_text_encoder} and training_args.dc_language={training_args.dc_language}")
@@ -318,17 +332,56 @@ def do_one_fold(train_samples, test_samples, fold_num):
     #audio_encoder = AutoModel.from_pretrained(my_model_config.audio_encoder_path, config=config)
     audio_encoder = AutoModel.from_pretrained(invacogni_config.audio_encoder_path).encoder
     print(f"loaded audio encoder: {type(audio_encoder)}")
+    #print("8888888888888")
     if not training_args.dc_language and not training_args.dc_gender and not training_args.train_audio_encoder:
+        #print("99999999999")
         for param in audio_encoder.parameters():
             param.requires_grad = False
         print(f"froze the audio encoder because training_args.dc_language={training_args.dc_language} and training_args.dc_gender={training_args.dc_gender} and training_args.train_audio_encoder={training_args.train_audio_encoder}")
     
-    model = InvaCogni(invacogni_config,
+    print(f"The loaded model class is {training_args.model_class}")
+    model = model_class_dict[training_args.model_class](invacogni_config,
                     vision_encoder=vision_encoder,
                     text_encoder=text_encoder,
                     audio_encoder=audio_encoder,
                     )
 
+    if training_args.start_from_no_dc:
+        all_items = os.listdir(f"{training_args.start_from_no_dc}/fold_{fold_num}")
+        
+        model_dict = model.state_dict()
+
+        for i in all_items:
+            if i.startswith("checkpoint-"):
+                state_dict = load_file(f"{training_args.start_from_no_dc}/fold_{fold_num}/{i}/model.safetensors")  # returns a dictionary of tensors
+                filtered_ckpt = {}
+                for k, v in state_dict.items():
+                    if k in model_dict and v.shape == model_dict[k].shape:
+                        filtered_ckpt[k] = v
+                    else:
+                        print(f"layer shape mismatch or not found: {k}")
+                
+                model.load_state_dict(filtered_ckpt, strict=False)
+                
+                print(f"\nloaded no_dc checkpoint from {training_args.start_from_no_dc}/fold_{fold_num}/{i}/model.safetensors")
+                if not training_args.train_image_encoder:
+                    for param in model.vision_encoder.parameters():
+                        param.requires_grad = False
+                    print(f"froze (again) the vision encoder: {type(vision_encoder)}")
+                
+                if not training_args.train_text_encoder and not training_args.dc_language and not training_args.dc_gender:
+                    for param in model.text_encoder.encoder.parameters():
+                        param.requires_grad = False
+                    print(f"froze (again) the text encoder (except pooler layer) because train_text_encoder={training_args.train_text_encoder} and training_args.dc_language={training_args.dc_language}")
+
+                if not training_args.dc_language and not training_args.dc_gender and not training_args.train_audio_encoder:
+                    for param in audio_encoder.parameters():
+                        param.requires_grad = False
+                    print(f"froze (again) the audio encoder because training_args.dc_language={training_args.dc_language} and training_args.dc_gender={training_args.dc_gender} and training_args.train_audio_encoder={training_args.train_audio_encoder}")
+
+    print("\n#################################")
+    print("#################################\n")
+    
     #print(model)
 
     trainer = InvaCogniTrainer(
@@ -548,7 +601,7 @@ if __name__ == "__main__":
         val_samples = None
     elif training_args.max_dataset_size == 0:
         raise ValueError("the max_dataset_size arg can not be 0")
-    else:
+    '''else:
         counts = {
             ('english', 'M'): 5,
             ('english', 'F'): 7,
@@ -572,7 +625,8 @@ if __name__ == "__main__":
                                 processor=processor,
                                 audio_parent_path=training_args.audio_parent_path,
                                 image_parent_path=training_args.image_parent_path,
-                                aug_img=False, aug_audio=False,)    
+                                aug_img=False, aug_audio=False,)
+    '''  
 
     map_label = {
         "english_M":0,
@@ -646,9 +700,11 @@ if __name__ == "__main__":
                     image_parent_path=training_args.image_parent_path,
                     aug_img=False, aug_audio=False,
                     )
-        
-        val_samples = val_samples if val_samples is not None else test_samples
-        model, is_main_process = do_one_fold(train_samples, val_samples, n)
+
+        if val_samples is not None: 
+            model, is_main_process = do_one_fold(train_samples, val_samples, n)
+        else:
+            model, is_main_process = do_one_fold(train_samples, test_samples, n)
 
         if is_main_process:
             os.makedirs(f"./{training_args.output_dir}", exist_ok=True)

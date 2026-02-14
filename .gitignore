@@ -1,6 +1,10 @@
 dataset/*
 wandb/*
 model/*
+model2/*
+model22/*
+model3/*
+model_test/*
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

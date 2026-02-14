@@ -1,8 +1,9 @@
 #!/bin/bash
 
 export CUDA_VISIBLE_DEVICES=5
-OUTPUT_DIR="model/lam2_dc_gen_no_text_03-5_2e-2_moreeval20"
-RUN_NAME="lam2_dc_gen_no_text_03-5_2e-2_moreeval20"
+OUTPUT_DIR="model3/cont_lam2_dc_gen_img_text_no_aug20_avgtext"
+RUN_NAME="cont_lam2_dc_gen_img_text_no_aug20_avgtext"
+start_from_no_dc="model3/no_dc_img_text_no_aug14_avgtext"
 REPORT_TO="wandb"
 NUM_FOLD=10
 DATASET_PATH="./dataset/taukadial/final_combined_dataset.csv"
@@ -20,13 +21,18 @@ TASK_CLASSIFIER_FFN="[[1536, 3072], 'gelu', 'dropout-0.3', [3072, 768], 'gelu', 
 CROSS_ATTENTION_FFN="[[768, 3072], 'gelu', 'dropout-0.5', [3072, 768], 'gelu']"
 ATTENTION_DROPOUT=0.35
 NUM_ATTENTION_HEAD=8
+model_class="InvaCogni"
 # --loss_lambda=0.125 \
 #--remove_punc_in_text \
 
 accelerate launch train.py \
+            --start_from_no_dc="$start_from_no_dc" \
             --dc_gender \
             --loss_gamma=2 \
+            --train_image_encoder \
+            --train_text_encoder \
             --train_audio_encoder \
+            --model_class="$model_class" \
             --audio_FFN="$AUDIO_FFN" \
             --gender_domain_classifier_FFN="$GENDER_DOMAIN_CLASSIFIER_FFN" \
             --language_domain_classifier_FFN="$LANGUAGE_DOMAIN_CLASSIFIER_FFN" \

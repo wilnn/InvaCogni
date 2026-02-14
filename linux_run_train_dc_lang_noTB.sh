@@ -1,9 +1,9 @@
 #!/bin/bash
 
 export CUDA_VISIBLE_DEVICES=6
-OUTPUT_DIR="model3/cont_lam5_dc_lang_img_text_no_aug30_avgtext"
-RUN_NAME="cont_lam5_dc_lang_img_text_no_aug30_avgtext"
-start_from_no_dc="model3/no_dc_img_text_no_aug14_avgtext"
+OUTPUT_DIR="model3/noTB_cont_lam5_dc_lang_img_text_no_aug30_avgtext"
+RUN_NAME="noTB_cont_lam5_dc_lang_img_text_no_aug30_avgtext"
+start_from_no_dc="model3/noTB_no_dc_img_text_no_aug14_avgtext"
 REPORT_TO="wandb"
 NUM_FOLD=10
 DATASET_PATH="./dataset/taukadial/final_combined_dataset.csv"
@@ -15,13 +15,13 @@ MAX_DATASET_SIZE=-1 # negative to use the entire dataset
 BATCH_SIZE=4
 NUM_EPOCHS=30
 AUDIO_FFN="[[512, 3072], 'gelu', 'dropout-0.3', [3072, 768], 'gelu']"
-GENDER_DOMAIN_CLASSIFIER_FFN="[[512, 3072], 'gelu', [3072, 512], 'gelu', [512, 1]]"
-LANGUAGE_DOMAIN_CLASSIFIER_FFN="[[1280, 3072], 'gelu', [3072, 768], 'gelu', [768, 1]]"
+GENDER_DOMAIN_CLASSIFIER_FFN="[[1536, 3072], 'gelu', [3072, 512], 'gelu', [512, 1]]"
+LANGUAGE_DOMAIN_CLASSIFIER_FFN="[[1536, 3072], 'gelu', [3072, 768], 'gelu', [768, 1]]"
 TASK_CLASSIFIER_FFN="[[1536, 3072], 'gelu', 'dropout-0.3', [3072, 768], 'gelu', 'dropout-0.3', [768, 384], 'gelu', [384, 1]]"
 CROSS_ATTENTION_FFN="[[768, 3072], 'gelu', 'dropout-0.5', [3072, 768], 'gelu']"
 ATTENTION_DROPOUT=0.35
 NUM_ATTENTION_HEAD=8
-model_class="InvaCogni"
+model_class="InvaCogni_no_TB"
 #--remove_punc_in_text \
 
 accelerate launch train.py \

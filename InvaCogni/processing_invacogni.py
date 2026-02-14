@@ -164,8 +164,7 @@ class InvaCogniProcessor(ProcessorMixin):
         waveforms = self.feature_extractor(waveforms,
                                             sampling_rate=target_sampling_rate, 
                                             return_tensors="pt")
-        
-        return waveforms['input_features'] # shape: [batch size, seq length, dim]
+        return waveforms['input_features'] # shape: [batch size, 80, 3000]
 
     def __call__(self, images, text, audio,
                  gender_dc_labels=None,
