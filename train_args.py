@@ -23,3 +23,10 @@ class trainArgs(TrainingArguments):
     remove_punc_in_text: bool = False
     model_class: str = 'InvaCogni'
     start_from_no_dc: str = None
+    dataset: str = "taukdial"
+    prepare_num_lb: int = 3
+    is_wav2vec2: bool = False
+    is_ast: bool = False
+    test_ds: str = None
+    dataset_path2: str = None
+    audio_parent_path2: str = None

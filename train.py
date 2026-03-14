@@ -2,7 +2,7 @@ from torch.utils.data import Dataset, DataLoader
 from sklearn.model_selection import StratifiedKFold
 from train_args import trainArgs
 
-from InvaCogni.modeling_invacogni import InvaCogni, InvaCogni_2TB, InvaCogni_no_TB
+from InvaCogni.modeling_invacogni import InvaCogni, InvaCogni_2TB, InvaCogni_no_TB, InvaCogni_2TBnoimg, whisper_baseline
 from InvaCogni.configuration_invacogni import InvaCogniConfig
 from InvaCogni.processing_invacogni import InvaCogniProcessor
 import unicodedata
@@ -60,6 +60,8 @@ model_class_dict = {
     "InvaCogni": InvaCogni,
     "InvaCogni_2TB": InvaCogni_2TB,
     "InvaCogni_no_TB": InvaCogni_no_TB,
+    "InvaCogni_2TB_noimg":InvaCogni_2TBnoimg,
+    "whisper_baseline":whisper_baseline,
 }
 
 class InvaCogniTrainer(Trainer):
@@ -125,6 +127,159 @@ def compute_loss(outputs,
 '''
 
 
+class PrepareDataset(Dataset):
+    def __init__(self, ds, processor,
+                 audio_parent_path="./dataset/taukadial/train/",
+                 image_parent_path=None,
+                 aug_img=False,
+                 aug_audio=False,
+                 ):
+        
+        #self.df = pandas.read_csv(ds_path)
+        self.ds = ds
+        self.processor = processor
+
+        self.audio_parent_path = audio_parent_path
+
+        if training_args.prepare_num_lb == 2 or (training_args.test_ds is not None and training_args.test_ds=="prepare"):
+            #print(f"use 2 labels for prepare because tets_ds is: {training_args.test_ds}")
+            self.label_map = {"ADRD":1, "MCI": 1, "NC":0}
+        else:
+            self.label_map = {"ADRD":2, "MCI": 1, "NC":0}
+        self.gender_map = {"M": 1, "F":0}
+        self.language_map = {"english": 1, "non_english":0}
+        self.aug_audio=aug_audio
+
+    def remove_punctuation(self, text):
+        return ''.join(
+            ch for ch in text
+            if not unicodedata.category(ch).startswith('P')
+        )
+ 
+    def __len__(self):
+        return len(self.ds)
+
+    def __getitem__(self, idx):
+        #row = self.df.iloc[idx]
+        row = self.ds[idx]
+
+        audio_file = self.audio_parent_path+row["audio_file"]
+        text = row['text'].strip()
+        text = self.remove_punctuation(text) if training_args.remove_punc_in_text else text
+        label = self.label_map[row['label']]
+        gender = self.gender_map[row['sex']]
+        language = self.language_map[row['language']]
+
+        return self.processor(
+                           text=[text],
+                           audio=[audio_file],
+                           labels=[label],
+                           gender_dc_labels=[gender],
+                           language_dc_labels=[language],
+                           target_sampling_rate=16000,
+                           aug_audio=self.aug_audio,
+                           )
+    
+def PrepareDataset_collate_fn(batch):
+    #batch[0]['text_pad_token'] = 0
+    #print(batch[1].keys())
+    #exit(0)
+    '''
+    batch is a list of dict
+    where each dict is returned by TaukdialDataset.__getitem__()
+    '''
+    audio = [n['audio'] for n in batch]
+    gender_dc_labels = [n['gender_dc_labels'] for n in batch] if training_args.dc_gender else None
+    language_dc_labels = [n['language_dc_labels'] for n in batch] if training_args.dc_language else None
+    labels = [n['labels'] for n in batch]
+
+    # pad text tokens to the longest
+    input_ids = []
+    input_ids_attention_mask = []
+    max_length = 0
+    for n in batch:
+        if n['input_ids'].shape[-1] > max_length:
+            max_length = n['input_ids'].shape[-1]
+
+    for n in batch:
+        to_pad = max_length - n['input_ids'].shape[-1]
+        input_ids.append(F.pad(n['input_ids'], (0, to_pad), value=training_args.pad_token))
+        input_ids_attention_mask.append(F.pad(n['input_ids_attention_mask'], (0, to_pad), value=0))
+
+    if training_args.is_wav2vec2:
+        max_length = 0
+        for n in audio:
+            if n.shape[-1] > max_length:
+                max_length = n.shape[-1]
+        for n in range(len(audio)):
+            to_pad = max_length - audio[n].shape[-1]
+            audio[n] = F.pad(audio[n], (0, to_pad), value=0) # 0 is default padding value.
+                                    #see https://huggingface.co/facebook/wav2vec2-large-xlsr-53/blob/main/preprocessor_config.json
+
+    audio = torch.cat(audio, dim=0)
+    #print(audio.shape)
+    #exit(0)
+    input_ids = torch.cat(input_ids, dim=0)
+    input_ids_attention_mask = torch.cat(input_ids_attention_mask, dim=0)
+    gender_dc_labels = torch.cat(gender_dc_labels, dim=0) if training_args.dc_gender else torch.tensor(-49)
+    language_dc_labels = torch.cat(language_dc_labels, dim=0) if training_args.dc_language else torch.tensor(-49)
+    labels = torch.cat(labels, dim=0)
+    return {
+            "audio":audio,
+            "input_ids":input_ids,
+            "input_ids_attention_mask":input_ids_attention_mask,
+            "gender_dc_labels": gender_dc_labels,
+            "language_dc_labels": language_dc_labels,
+            "labels":labels,
+            }
+
+def PrepareDataset_collate_fn2(batch):
+    #batch[0]['text_pad_token'] = 0
+    #print(batch[1].keys())
+    #exit(0)
+    audio = [n['audio'] for n in batch]
+    gender_dc_labels = [n['gender_dc_labels'] for n in batch]
+    language_dc_labels = [n['language_dc_labels'] for n in batch]
+    labels = [n['labels'] for n in batch]
+
+    # pad text tokens to the longest
+    input_ids = []
+    input_ids_attention_mask = []
+    max_length = 0
+    for n in batch:
+        if n['input_ids'].shape[-1] > max_length:
+            max_length = n['input_ids'].shape[-1]
+    for n in batch:
+        to_pad = max_length - n['input_ids'].shape[-1]
+        input_ids.append(F.pad(n['input_ids'], (0, to_pad), value=0))
+        input_ids_attention_mask.append(F.pad(n['input_ids_attention_mask'], (0, to_pad), value=0))
+
+    if training_args.is_wav2vec2:
+        max_length = 0
+        for n in audio:
+            if n.shape[-1] > max_length:
+                max_length = n.shape[-1]
+        for n in range(len(audio)):
+            to_pad = max_length - audio[n].shape[-1]
+            audio[n] = F.pad(audio[n], (0, to_pad), value=0) # 0 is default padding value.
+                                    #see https://huggingface.co/facebook/wav2vec2-large-xlsr-53/blob/main/preprocessor_config.json
+
+    audio = torch.cat(audio, dim=0)
+    input_ids = torch.cat(input_ids, dim=0)
+    input_ids_attention_mask = torch.cat(input_ids_attention_mask, dim=0)
+    gender_dc_labels = torch.cat(gender_dc_labels, dim=0)
+    language_dc_labels = torch.cat(language_dc_labels, dim=0)
+    labels = torch.cat(labels, dim=0)
+
+    return {
+            "audio":audio,
+            "input_ids":input_ids,
+            "input_ids_attention_mask":input_ids_attention_mask,
+            "gender_dc_labels": gender_dc_labels,
+            "language_dc_labels": language_dc_labels,
+            "labels":labels,
+            }
+
 class TaukdialDataset(Dataset):
     def __init__(self, ds, processor,
                  audio_parent_path="./dataset/taukadial/train/",
@@ -186,7 +341,8 @@ def TaukdialDataset_collate_fn(batch):
     batch is a list of dict
     where each dict is returned by TaukdialDataset.__getitem__()
     '''
-    pixel_values = [n['pixel_values'] for n in batch]
+    if training_args.model_class != "InvaCogni_2TB_noimg" or training_args.test_ds is None:
+        pixel_values = [n['pixel_values'] for n in batch]
     audio = [n['audio'] for n in batch]
     gender_dc_labels = [n['gender_dc_labels'] for n in batch] if training_args.dc_gender else None
     language_dc_labels = [n['language_dc_labels'] for n in batch] if training_args.dc_language else None
@@ -205,7 +361,8 @@ def TaukdialDataset_collate_fn(batch):
         input_ids.append(F.pad(n['input_ids'], (0, to_pad), value=training_args.pad_token))
         input_ids_attention_mask.append(F.pad(n['input_ids_attention_mask'], (0, to_pad), value=0))
 
-    pixel_values = torch.cat(pixel_values, dim=0)
+    if training_args.model_class != "InvaCogni_2TB_noimg" or training_args.test_ds is None:
+        pixel_values = torch.cat(pixel_values, dim=0)
     audio = torch.cat(audio, dim=0)
     input_ids = torch.cat(input_ids, dim=0)
     input_ids_attention_mask = torch.cat(input_ids_attention_mask, dim=0)
@@ -213,21 +370,25 @@ def TaukdialDataset_collate_fn(batch):
     language_dc_labels = torch.cat(language_dc_labels, dim=0) if training_args.dc_language else torch.tensor(-49)
     labels = torch.cat(labels, dim=0)
 
-    return {
+    out = {
             "audio":audio,
-            "pixel_values":pixel_values,
             "input_ids":input_ids,
             "input_ids_attention_mask":input_ids_attention_mask,
             "gender_dc_labels": gender_dc_labels,
             "language_dc_labels": language_dc_labels,
             "labels":labels,
             }
+    if training_args.model_class != "InvaCogni_2TB_noimg" or training_args.test_ds is None:
+        #print("IMAGE IS ADDED")
+        out["pixel_values"] = pixel_values
+    return out
 
 def TaukdialDataset_collate_fn2(batch):
     #batch[0]['text_pad_token'] = 0
     #print(batch[1].keys())
     #exit(0)
-    pixel_values = [n['pixel_values'] for n in batch]
+    if training_args.model_class != "InvaCogni_2TB_noimg" or training_args.test_ds is None:
+        pixel_values = [n['pixel_values'] for n in batch]
     audio = [n['audio'] for n in batch]
     gender_dc_labels = [n['gender_dc_labels'] for n in batch]
     language_dc_labels = [n['language_dc_labels'] for n in batch]
@@ -245,7 +406,9 @@ def TaukdialDataset_collate_fn2(batch):
         input_ids.append(F.pad(n['input_ids'], (0, to_pad), value=0))
         input_ids_attention_mask.append(F.pad(n['input_ids_attention_mask'], (0, to_pad), value=0))
 
-    pixel_values = torch.cat(pixel_values, dim=0)
+    if training_args.model_class != "InvaCogni_2TB_noimg" or training_args.test_ds is None:
+        pixel_values = torch.cat(pixel_values, dim=0)
+
     audio = torch.cat(audio, dim=0)
     input_ids = torch.cat(input_ids, dim=0)
     input_ids_attention_mask = torch.cat(input_ids_attention_mask, dim=0)
@@ -253,16 +416,18 @@ def TaukdialDataset_collate_fn2(batch):
     language_dc_labels = torch.cat(language_dc_labels, dim=0)
     labels = torch.cat(labels, dim=0)
 
-    return {
+    out = {
             "audio":audio,
-            "pixel_values":pixel_values,
             "input_ids":input_ids,
             "input_ids_attention_mask":input_ids_attention_mask,
             "gender_dc_labels": gender_dc_labels,
             "language_dc_labels": language_dc_labels,
             "labels":labels,
             }
-
+    if training_args.model_class != "InvaCogni_2TB_noimg" or training_args.test_ds is None:
+        #print("IMAGE IS ADDED")
+        out["pixel_values"] = pixel_values
+    return out
 
 def compute_metrics_fn(p: EvalPrediction):
     #print(f"eeeeeeeeeeeeeeeee{p.predictions[0]}")
@@ -274,9 +439,14 @@ def compute_metrics_fn(p: EvalPrediction):
     #print(len(p.predictions))
     #print(p.label_ids[2].shape)
     #exit(0)
-    preds = p.predictions[0].squeeze(-1)
+    if training_args.dataset == "prepare" and training_args.prepare_num_lb > 2:
+        preds = p.predictions[0]  # (B, C) logits
+        preds = np.argmax(preds, axis=-1)  # (B,)
+    else:
+        preds = p.predictions[0].squeeze(-1)
+        preds = (preds > 0.5).astype(int)
+    
     labels = p.label_ids[2].squeeze(-1).astype(int)
-    preds = (preds > 0.5).astype(int)
     tc_f1 = f1_score(labels, preds, average="macro")
     tc_bal_acc = balanced_accuracy_score(labels, preds)
     #print("#########")
@@ -330,7 +500,12 @@ def do_one_fold(train_samples, test_samples, fold_num):
     #config.mask_time_prob = 0.0 # prevent the model from masking the audio embeddings
     #config.mask_feature_prob = 0.0 # prevent the model from masking the audio embeddings
     #audio_encoder = AutoModel.from_pretrained(my_model_config.audio_encoder_path, config=config)
-    audio_encoder = AutoModel.from_pretrained(invacogni_config.audio_encoder_path).encoder
+    if training_args.is_wav2vec2 or training_args.is_ast:
+        audio_encoder = AutoModel.from_pretrained(invacogni_config.audio_encoder_path)
+        if training_args.is_wav2vec2:
+            audio_encoder.gradient_checkpointing_enable()
+    else:
+        audio_encoder = AutoModel.from_pretrained(invacogni_config.audio_encoder_path).encoder
     print(f"loaded audio encoder: {type(audio_encoder)}")
     #print("8888888888888")
     if not training_args.dc_language and not training_args.dc_gender and not training_args.train_audio_encoder:
@@ -340,11 +515,18 @@ def do_one_fold(train_samples, test_samples, fold_num):
         print(f"froze the audio encoder because training_args.dc_language={training_args.dc_language} and training_args.dc_gender={training_args.dc_gender} and training_args.train_audio_encoder={training_args.train_audio_encoder}")
     
     print(f"The loaded model class is {training_args.model_class}")
-    model = model_class_dict[training_args.model_class](invacogni_config,
-                    vision_encoder=vision_encoder,
-                    text_encoder=text_encoder,
-                    audio_encoder=audio_encoder,
-                    )
+    if training_args.model_class != "InvaCogni_2TB_noimg":
+        model = model_class_dict[training_args.model_class](invacogni_config,
+                        vision_encoder=vision_encoder,
+                        text_encoder=text_encoder,
+                        audio_encoder=audio_encoder,
+                        )
+    else:
+        model = model_class_dict[training_args.model_class](invacogni_config,
+                        text_encoder=text_encoder,
+                        audio_encoder=audio_encoder,
+                        )
+
 
     if training_args.start_from_no_dc:
         all_items = os.listdir(f"{training_args.start_from_no_dc}/fold_{fold_num}")
@@ -378,19 +560,24 @@ def do_one_fold(train_samples, test_samples, fold_num):
                     for param in audio_encoder.parameters():
                         param.requires_grad = False
                     print(f"froze (again) the audio encoder because training_args.dc_language={training_args.dc_language} and training_args.dc_gender={training_args.dc_gender} and training_args.train_audio_encoder={training_args.train_audio_encoder}")
+    
+    if training_args.model_class == "InvaCogni_2TB_noimg":
+        del vision_encoder
+        gc.collect()
 
     print("\n#################################")
     print("#################################\n")
     
     #print(model)
 
+    collate_func = TaukdialDataset_collate_fn if training_args.dataset != "prepare" else PrepareDataset_collate_fn
     trainer = InvaCogniTrainer(
         model=model,
         args=training_args,
         train_dataset=train_samples,
         eval_dataset=test_samples,
         #tokenizer=tokenizer,
-        data_collator=TaukdialDataset_collate_fn,
+        data_collator=collate_func,
         #compute_loss_fun=compute_loss,
         compute_metrics=compute_metrics_fn,
         #callbacks=[EarlyStoppingCallback(early_stopping_patience=4,
@@ -426,10 +613,17 @@ def evaluate(model, dataset, is_train_dataset, fold_num):
 
     model.eval()  # Set model to evaluation mode
 
-    test_loader = DataLoader(dataset, batch_size=training_args.per_device_train_batch_size,
-                                shuffle=False,
-                                collate_fn=TaukdialDataset_collate_fn2,)
+    if training_args.test_ds is not None and not is_train_dataset:
+        #print(f"99999999999999{is_train_dataset}")
+        collate_func = TaukdialDataset_collate_fn2 if training_args.test_ds != "prepare" else PrepareDataset_collate_fn2
+        #print(f"loaded collate fn for test ds {collate_func}")
+    else:
+        collate_func = TaukdialDataset_collate_fn2 if training_args.dataset != "prepare" else PrepareDataset_collate_fn2
     
+    test_loader = DataLoader(dataset, batch_size=training_args.per_device_train_batch_size,
+                            shuffle=False,
+                            collate_fn=collate_func,)
+
     preds_list = []
     labels_list = []
     genders_list = []
@@ -440,16 +634,26 @@ def evaluate(model, dataset, is_train_dataset, fold_num):
     with torch.inference_mode():  # 2. Enable inference mode
         for batch in tqdm(test_loader):
             batch["audio"] = batch["audio"].to(next(model.parameters()).device)
-            batch["pixel_values"] = batch["pixel_values"].to(next(model.parameters()).device)
+            
+            if training_args.dataset != "prepare" and training_args.test_ds is None:
+                batch["pixel_values"] = batch["pixel_values"].to(next(model.parameters()).device)
+            
             batch["input_ids"] = batch["input_ids"].to(next(model.parameters()).device)
             batch["input_ids_attention_mask"] = batch["input_ids_attention_mask"].to(next(model.parameters()).device)
             temp_gen = batch["gender_dc_labels"]
             batch["gender_dc_labels"] = torch.tensor(-49).to(next(model.parameters()).device)
             temp_lang = batch["language_dc_labels"]
             batch["language_dc_labels"] = torch.tensor(-49).to(next(model.parameters()).device)
-            batch["labels"] = batch["labels"].to(next(model.parameters()).device)
+            
+            if training_args.test_ds is not None:
+                temp_lb = batch["labels"]
+                batch["labels"] = None
+            else:
+                batch["labels"] = batch["labels"].to(next(model.parameters()).device)
             
             output = model(**batch)
+            if training_args.test_ds is not None:
+                batch["labels"] = temp_lb
             #print(output)
             #exit(0)
             
@@ -458,9 +662,17 @@ def evaluate(model, dataset, is_train_dataset, fold_num):
             input_ids_out = model.text_encoder(batch['input_ids'],
                                         batch['input_ids_attention_mask']).pooler_output
 
-            probs = F.sigmoid(output['logits']).squeeze(-1)
-            #print(probs)
-            preds = (probs > 0.5).int().cpu().numpy()
+            if training_args.dataset == "prepare" and training_args.prepare_num_lb > 2:
+                probs = F.softmax(output['logits'], dim=-1)        # (B, C) logits
+                preds = probs.argmax(dim=-1).cpu().numpy()
+                # treat all label 2 as label1 (mci) because when train on taukadial
+                # and test on prepare, model can only predict binary
+                if training_args.test_ds is not None and training_args.test_ds != "prepare":
+                    preds[preds == 2] = 1
+            else:
+                probs = F.sigmoid(output['logits']).squeeze(-1)
+                preds = (probs > 0.5).int().cpu().numpy()
+
             labels = batch['labels'].squeeze(-1).int().cpu().numpy()
             genders = temp_gen.squeeze(-1).int().cpu().numpy()
             languages = temp_lang.squeeze(-1).int().cpu().numpy()
@@ -572,10 +784,10 @@ def evaluate(model, dataset, is_train_dataset, fold_num):
         
         #print(f"F1 for chinese MCI at fold {fold_num} for {temp}: {f1[1]}")
         #print(f"F1 for chinese NC at fold {fold_num} for {temp}: {f1[0]}")
-        summary += f"Average F1 for chinese at fold {fold_num} for {temp}: {c_f1}\n"
+        summary += f"Average F1 for chinese(or non english) at fold {fold_num} for {temp}: {c_f1}\n"
         #print(f"Balanced Accuracy for chinese MCI at fold {fold_num} for {temp}: {bal_acc[1]}")
         #print(f"Balanced Accuracy for chinese NC at fold {fold_num} for {temp}: {bal_acc[0]}")
-        summary += f"Average Balanced Accuracy for chinese at fold {fold_num} for {temp}: {c_bal_acc}\n\n"
+        summary += f"Average Balanced Accuracy for chinese(or non english) at fold {fold_num} for {temp}: {c_bal_acc}\n\n"
         summary += f"Average F1 for all languages at fold {fold_num} for {temp}: {(e_f1+c_f1)/2}\n"
         summary += f"Average Balanced Accuracy for all languages at fold {fold_num} for {temp}: {(c_bal_acc+e_bal_acc)/2}\n"
         with open(f"./{training_args.output_dir}/result.txt", "a") as f:
@@ -628,12 +840,19 @@ if __name__ == "__main__":
                                 aug_img=False, aug_audio=False,)
     '''  
 
-    map_label = {
+    taukdial_map_label = {
         "english_M":0,
         "english_F":1,
         "chinese_M":2,
         "chinese_F":3,
     }
+    prepare_map_label = {
+        "english_M":0,
+        "english_F":1,
+        "non_english_M":2,
+        "non_english_F":3,
+    }
+    map_label = prepare_map_label if training_args.dataset == "prepare" else taukdial_map_label
     labels = []
     for i in range(len(dataset)):
         labels.append(map_label[f"{dataset.iloc[i]['language']}_{dataset.iloc[i]['sex']}"])
@@ -647,6 +866,15 @@ if __name__ == "__main__":
     print(temp)
     print(len(dataset))
     exit(0)'''
+
+    if training_args.test_ds is not None:
+        dataset2 = pandas.read_csv(training_args.dataset_path2)
+        #print(f"loaded test ds: {training_args.test_ds}")
+        if training_args.max_dataset_size > 0:
+            dataset2 = dataset2.iloc[:training_args.max_dataset_size]
+        dataset2 = [dataset2.iloc[i] for i in range(len(dataset2))]
+        
+
     skf = StratifiedKFold(n_splits=training_args.num_fold, shuffle=True, random_state=training_args.seed)
 
     os.environ["WANDB_PROJECT"] = training_args.wandb_project_name
@@ -687,14 +915,33 @@ if __name__ == "__main__":
         test_samples = [dataset.iloc[n] for n in test_index]
         #test_labels = [dataset.iloc[n]['label'] for n in test_index]
         
-        train_samples = TaukdialDataset(ds=train_samples,
+        
+        dataset_class = TaukdialDataset if training_args.dataset != "prepare" else PrepareDataset
+        train_samples = dataset_class(ds=train_samples,
                               processor=processor,
                               audio_parent_path=training_args.audio_parent_path,
                               image_parent_path=training_args.image_parent_path,
                               aug_img=training_args.aug_img,
                               aug_audio=training_args.aug_audio,
                               )
-        test_samples = TaukdialDataset(ds=test_samples,
+        if training_args.test_ds is not None:
+            val_samples = dataset_class(ds=test_samples,
+                        processor=processor,
+                        audio_parent_path=training_args.audio_parent_path,
+                        image_parent_path=training_args.image_parent_path,
+                        aug_img=False, aug_audio=False,
+                        )
+            #print(f"loaded val sample from {type(val_samples)}")
+            dataset_class2 = TaukdialDataset if training_args.test_ds != "prepare" else PrepareDataset
+            test_samples = dataset_class2(ds=dataset2,
+                        processor=processor,
+                        audio_parent_path=training_args.audio_parent_path2,
+                        image_parent_path=training_args.image_parent_path,
+                        aug_img=False, aug_audio=False,
+                        )
+            #print(f"loaded test sample from {type(test_samples)}")
+        else:
+            test_samples = dataset_class(ds=test_samples,
                     processor=processor,
                     audio_parent_path=training_args.audio_parent_path,
                     image_parent_path=training_args.image_parent_path,
@@ -799,10 +1046,10 @@ if __name__ == "__main__":
             
             #print(f"F1 for chinese MCI: {c_f1[1]}")
             #print(f"F1 for chinese NC: {c_f1[0]}")
-            summary +=f"Average F1 for chinese: {c_f1}\n"
+            summary +=f"Average F1 for chinese(or non english): {c_f1}\n"
             #print(f"Balanced Accuracy for chinese MCI: {c_bal_acc[1]}")
             #print(f"Balanced Accuracy for chinese NC: {c_bal_acc[0]}")
-            summary +=f"Average Balanced Accuracy for chinese: {c_bal_acc}\n"
+            summary +=f"Average Balanced Accuracy for chinese(or non english): {c_bal_acc}\n"
             summary +=f"Average F1 for all languages: {(e_f1+c_f1)/2}\n"
             summary +=f"Average Balanced Accuracy for all languages: {(e_bal_acc+c_bal_acc)/2}\n"
             f.write(summary)
@@ -822,19 +1069,23 @@ if __name__ == "__main__":
         audio_out_list = tsne.fit_transform(audio_out_list)
         input_ids_out_list = tsne.fit_transform(input_ids_out_list)
 
+        if training_args.dataset == "prepare":
+            lang = "Non-English"
+        else:
+            lang = "Chinese"
         axes_list[0].scatter(audio_out_list[mask_m][:,0], audio_out_list[mask_m][:,1], color='orange', label='Male', alpha=0.5)
         axes_list[0].scatter(audio_out_list[mask_f][:,0], audio_out_list[mask_f][:,1],color='blue', label='Female', alpha=0.5)
         axes_list[1].scatter(audio_out_list[mask_e][:,0], audio_out_list[mask_e][:,1],color='orange', label='English', alpha=0.5)
         axes_list[2].scatter(input_ids_out_list[mask_e][:,0], input_ids_out_list[mask_e][:,1],color='orange', label='English', alpha=0.5)
-        axes_list[1].scatter(audio_out_list[mask_c][:,0], audio_out_list[mask_c][:,1],color='blue', label='Chinese', alpha=0.5)
-        axes_list[2].scatter(input_ids_out_list[mask_c][:,0], input_ids_out_list[mask_c][:,1],color='blue', label='Chinese', alpha=0.5)
+        axes_list[1].scatter(audio_out_list[mask_c][:,0], audio_out_list[mask_c][:,1],color='blue', label=f'{lang}', alpha=0.5)
+        axes_list[2].scatter(input_ids_out_list[mask_c][:,0], input_ids_out_list[mask_c][:,1],color='blue', label=f'{lang}', alpha=0.5)
 
         axes_list[0].legend()
         axes_list[0].set_title(f'Male vs Female Audio Embeddings') 
         figures[0].savefig(f"./{training_args.output_dir[:-7]}/m_vs_f_audio.png")
         axes_list[1].legend()
-        axes_list[1].set_title(f'English vs Chinese Audio Embeddings') 
+        axes_list[1].set_title(f'English vs {lang} Audio Embeddings') 
         figures[1].savefig(f"./{training_args.output_dir[:-7]}/en_vs_cn_audio.png")
         axes_list[2].legend()
-        axes_list[2].set_title(f'English vs Chinese Text Embeddings') 
+        axes_list[2].set_title(f'English vs {lang} Text Embeddings') 
         figures[2].savefig(f"./{training_args.output_dir[:-7]}/en_vs_cn_text.png")

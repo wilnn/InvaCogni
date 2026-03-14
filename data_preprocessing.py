@@ -247,4 +247,211 @@ def main():
     print("\033[32m##################\033[0m")
     analyze_audio()
 
-main()
+#main()
+
+def make_prepare_dataset():
+    '''df = pd.read_csv("/home/public/htnguyen/projects/InvaCogni/dataset/prepare/acoustic/acoustic_data/train_labels.csv")
+    print(len(df))
+    print(df.columns)
+    folder = "/home/public/htnguyen/projects/InvaCogni/dataset/prepare/acoustic/train_audios"
+    num_files = sum(os.path.isfile(os.path.join(folder, f)) for f in os.listdir(folder))
+    print(num_files)
+
+    csv_path = "/home/public/htnguyen/projects/InvaCogni/dataset/prepare/acoustic/acoustic_data/train_labels.csv"
+    mp3_folder = "/home/public/htnguyen/projects/InvaCogni/dataset/prepare/acoustic/train_audios"
+
+    df = pd.read_csv(csv_path)
+
+    missing = []
+    bad = []
+    ok = 0
+
+    for uid in df["uid"].astype(str):
+        mp3_path = os.path.join(mp3_folder, f"{uid}.mp3")
+
+        # 1) check existence
+        if not os.path.exists(mp3_path):
+            missing.append(uid)
+            continue
+
+        # 2) check can open (basic check)
+        try:
+            with open(mp3_path, "rb") as f:
+                f.read(16)  # read first few bytes
+            ok += 1
+        except Exception:
+            bad.append(uid)
+
+    print(f"Total uids: {len(df)}")
+    print(f"OK mp3 files: {ok}")
+    print(f"Missing mp3 files: {len(missing)}")
+    print(f"Bad/unreadable mp3 files: {len(bad)}")
+
+    parquet = "./dataset/prepare/acoustic/audio_to_text_w_language_train.parquet"
+    parquet = pd.read_parquet(parquet)
+    #print(len(parquet))
+    #print(parquet.columns)
+    #print(parquet['language'].iloc[0])'''
+    
+
+    '''
+    id,audio_file,text,age,sex,mmse,language,image,label
+    taukdial-002-1,taukdial-002-1.wav," Yes. Do you",72,F,29,english,image-1.jpg,NC
+    
+    parquet
+    'file_name', 'transcribed_text', 'language'
+    gyvr, This looks familiar. A woman drying dishes., en (cn)
+
+    label
+    uid            aaop
+    diagnosis_control     0.0
+    diagnosis_mci         1.0
+    diagnosis_adrd        0.0
+    Name: 0, dtype: object
+    Index(['uid', 'diagnosis_control', 'diagnosis_mci', 'diagnosis_adrd'], dtype='object')
+    
+    
+    metadata
+    uid                                        aaop
+    age                                          72
+    gender                                   female
+    split                                     train
+    hash           e4ed5943c8460c2cf324d4a23c7d6fa1
+    filesize_kb                             186.144
+    Name: 0, dtype: object
+    Index(['uid', 'age', 'gender', 'split', 'hash', 'filesize_kb'], dtype='object')
+    '''
+
+    '''
+    lb['diagnosis'] = (
+            lb['diagnosis_control'] * 0 +
+            lb['diagnosis_mci'] * 1 +
+            lb['diagnosis_adrd'] * 2
+        ).astype(int)
+
+    '''
+
+    df_parquet = pd.read_parquet("./dataset/prepare/acoustic/audio_to_text_w_language_train.parquet")
+    df_label = pd.read_csv("./dataset/prepare/acoustic/acoustic_data/train_labels.csv")
+    df_metadata = pd.read_csv("./dataset/prepare/acoustic/acoustic_data/metadata.csv")
+    
+    df_parquet = df_parquet[df_parquet["language"] != "UNKNOWN"] # 1 example is unknown
+    df_parquet.loc[df_parquet["language"] == "vi", "transcribed_text"] = "no a. no a mucho tiempo que vivía un hidalgo de los... de los de lanza en astillero, adarga adarga antigua, rocín flaco y galgo corredor. Una olla de algo más vaca que carnero"
+    df_parquet.loc[df_parquet["language"] == "vi", "language"] = "es"
+    df_parquet.loc[df_parquet["language"] == "af", "transcribed_text"] = "Get a cookie and a cookie jar, right? Mothers sink overflowing while she's doing dishes and girl's waiting to have a cookie from the cookie jar while the boy is falling. Mother's wiping dishes, mothers standing in water, mothers looking out the window."
+    df_parquet.loc[df_parquet["language"] == "af", "language"] = "en"
+    df_parquet.loc[df_parquet["language"] == "pt", "transcribed_text"] = "Yo no me... no me de lo... de lo de... prueba... prueba... tiempo... tiempo que viví a una... luz de... m-m-m-m-m-m... me... los de la flo... la flo... esos son seis... que... que... que... que..."
+    df_parquet.loc[df_parquet["language"] == "pt", "language"] = "es"
+    df_parquet.loc[df_parquet["language"] == "ca", "language"] = "es"
+    df_parquet = df_parquet[df_parquet["file_name"] != "xoct"]
+    df_parquet.loc[df_parquet["language"] == "tl", "transcribed_text"] = "The stool is tilting as the kid is taking cookies to give to his sister. The water is running over the sink. The mother has to be blind. She dropped the dishes. What else am I supposed to find out? What else am I supposed to know? All happening? Like I said, the water running over on the floor. Mother standing in it. She's washing dishes.  She'd have to be blind not to know what's going on in that house."
+    df_parquet.loc[df_parquet["language"] == "tl", "language"] = "en"
+    df_parquet.loc[df_parquet["file_name"] == "ufed", "transcribed_text"] = "This is how she will find her. Mother's washing, drying the dishes. And Stu's upset. You know, she's getting all given. Cup and saucer sitting there in a plate ready to eat. Cookie jar is right here. There's a pineapple over there, spilled it, knocks it down. I don't know what that is. Looks like a mouse."
+    df_parquet.loc[df_parquet["file_name"] == "ufed", "language"] = "en"
+    df_parquet.loc[df_parquet["file_name"] == "vbxv", "transcribed_text"] = "The little boy is up on a stool reaching for a cookie, and the stool is ready to fall. He has one hand in the cookie jar and a cookie in his left hand. A girl is standing beside him, reaching for the cookie in his hand with her right finger held up to her lips. There is also a woman, the mother, standing at the sink looking out the window. The water is running over the top of the sink and onto the floor while she is looking away."
+    df_parquet.loc[df_parquet["file_name"] == "vbxv", "language"] = "en"
+    df_parquet.loc[df_parquet["file_name"] == "wbzl", "transcribed_text"] = "This is fine on the left. Okay, and the kitchen's draining on the left, is it? Yes. And Jimmy is reaching for the cookie—cookie jar. Uh-huh. Getting the cookie jar. Pardon? Cookie jar. Okay. She's doing the dishes, the boy might fall off of that stool he's on, okay. And the water is splashing out all over the floor and she doesn't know it. Uh-huh. And the boy might look up for the cookie jar and he might bang his head on the"
+    df_parquet.loc[df_parquet["file_name"] == "wbzl", "language"] = "en"
+
+    
+    #print(df_parquet.iloc)
+    #print(df_parquet.columns)
+    #print(df_label.iloc[0])
+    #print(df_label.columns)
+    #print(df_metadata.iloc[0])
+    #print(df_metadata.columns)
+    columns = ['id','audio_file','text','age','sex','language','label']
+    rows = []
+
+    for uid in df_label["uid"]:
+        subset = df_parquet.loc[df_parquet["file_name"] == uid, "transcribed_text"]
+        if not subset.empty:
+            text = subset.iloc[0].strip()  # safe: get the value
+        else:
+            continue
+        age = df_metadata.loc[(df_metadata["uid"] == uid) & (df_metadata["split"] == "train"), "age"].iloc[0]
+        sex = df_metadata.loc[(df_metadata["uid"] == uid) & (df_metadata["split"] == "train"), "gender"].iloc[0]
+        sex = "F" if sex == "female" else "M"
+
+        language = df_parquet.loc[df_parquet["file_name"] == uid, "language"].iloc[0]
+        language = "english" if language == "en" else "non_english"
+        row = df_label.loc[df_label["uid"] == uid].iloc[0]  # get the single row as Series
+
+        label = (
+            row['diagnosis_control'] * 0 +
+            row['diagnosis_mci'] * 1 +
+            row['diagnosis_adrd'] * 2
+        ).astype(int)
+        if label == 0:
+            label = "NC" 
+        elif label == 1:
+            label = "MCI"
+        else:
+            label = "ADRD" # ADRD = Alzheimer’s Disease and Related Dementias
+
+        rows.append((uid, f"{uid}.mp3", text, age, sex, language, label))
+
+    df = pd.DataFrame(rows, columns=columns)
+    #print(df['language'].value_counts())
+    #df.to_csv("./dataset/prepare/final_combined_dataset.csv", index=False)
+    #print(f"label {df["label"].value_counts()}")
+    values = df.loc[df["language"] == "english", "id"].tolist()
+    avg_age = df_metadata.loc[df_metadata["uid"].isin(values), "age"].mean()
+    print(f"english avg age: {avg_age}")
+    values = df.loc[df["language"] == "non_english", "id"].tolist()
+    avg_age = df_metadata.loc[df_metadata["uid"].isin(values), "age"].mean()
+    print(f"non english avg age: {avg_age}")
+
+    print(f"male english count: {df[(df["sex"] == "M") &(df["language"] == "english")].shape[0]}")
+    print(f"female english count: {df[(df["sex"] == "F") &(df["language"] == "english")].shape[0]}")
+    print(f"male non english count: {df[(df["sex"] == "M") &(df["language"] == "non_english")].shape[0]}")
+    print(f"female non english count: {df[(df["sex"] == "F") &(df["language"] == "non_english")].shape[0]}")   
+
+    print(f"MCI english count: {df[(df["label"] == "MCI") &(df["language"] == "english")].shape[0]}")
+    print(f"NC english count: {df[(df["label"] == "NC") &(df["language"] == "english")].shape[0]}")
+    print(f"ADRD english count: {df[(df["label"] == "ADRD") &(df["language"] == "english")].shape[0]}")
+
+    print(f"MCI non_english count: {df[(df["label"] == "MCI") &(df["language"] == "non_english")].shape[0]}")
+    print(f"NC non_english count: {df[(df["label"] == "NC") &(df["language"] == "non_english")].shape[0]}")
+    print(f"ADRD non_english count: {df[(df["label"] == "ADRD") &(df["language"] == "non_english")].shape[0]}")
+    print(len(df))
+    print(df_metadata['age'].median())
+
+# ----------------------------
+# Load dataset
+# ----------------------------
+# Replace with your real file name/path
+df = pd.read_csv("/home/public/htnguyen/projects/InvaCogni/dataset/prepare/final_combined_dataset.csv")
+
+# ----------------------------
+# Basic Data Cleaning (Optional but recommended)
+# ----------------------------
+# Remove rows with missing values in key columns
+df = df.dropna(subset=["age", "sex", "language", "label"])
+
+# ----------------------------
+# 1. Average Age per Label
+# ----------------------------
+avg_age = df.groupby("label")["age"].mean()
+print("\n===== Average Age per Label =====")
+print(avg_age)
+
+# ----------------------------
+# 2. Number of People per Sex within Each Label
+# ----------------------------
+sex_counts = df.groupby(["label", "sex"]).size().unstack(fill_value=0)
+
+print("\n===== Sex Counts per Label =====")
+print(sex_counts)
+
+# ----------------------------
+# 3. Number of People per Language within Each Label
+# ----------------------------
+language_counts = df.groupby(["label", "language"]).size().unstack(fill_value=0)
+
+print("\n===== Language Counts per Label =====")
+print(language_counts)
+
+print(df['age'].mean())
+
+print("\nResults saved as CSV files!")

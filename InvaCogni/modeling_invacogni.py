@@ -6,6 +6,7 @@ from transformers.modeling_outputs import SequenceClassifierOutput
 from dataclasses import dataclass
 from typing import Optional, Tuple
 from huggingface_hub import PyTorchModelHubMixin
+import inspect
 
 class GradReverse(torch.autograd.Function):
     @staticmethod
@@ -68,8 +69,13 @@ class InvacogniAudioEncoder(nn.Module):
             self.audio_encoder = AutoModel.from_config(config_).encoder
     
     def forward(self, audio, return_dict=False, **kwargs):
-        return self.audio_encoder(audio,
-                                  return_dict=return_dict, **kwargs)
+        sig = inspect.signature(self.audio_encoder.forward)
+        if "return_dict" in sig.parameters:
+            return self.audio_encoder(audio,
+                                    return_dict=return_dict, **kwargs)
+        else:
+            return self.audio_encoder(audio, **kwargs)
+
 
 
 class InvaCogniFFN(nn.Module):
@@ -707,6 +713,206 @@ class InvaCogni_2TB(nn.Module):
             
         if labels is not None:
             tc_loss = F.binary_cross_entropy_with_logits(tc_logits, labels)
+
+        if gender_dc_labels is not None or labels is not None or language_dc_labels is not None:
+            total_loss = tc_loss + self.config.loss_lambda*gender_dc_loss + self.config.loss_lambda*language_dc_loss
+
+        language_dc_loss = None if language_dc_logits is None else language_dc_loss
+        gender_dc_loss = None if gender_dc_logits is None else gender_dc_loss
+
+        if not return_dict:
+            output = (tc_logits, tc_loss, gender_dc_logits, gender_dc_loss, language_dc_logits, language_dc_loss)
+            return ((total_loss,) + output) if total_loss is not None else output
+        
+        return InvaCogniClassifierOutput(
+            loss=total_loss,
+            logits=tc_logits,
+            #hidden_states=None,
+            #attentions=None,
+            gender_dc_logits=gender_dc_logits,
+            gender_dc_loss=gender_dc_loss,
+            language_dc_logits=language_dc_logits,
+            language_dc_loss=language_dc_loss,
+            tc_loss=tc_loss,
+        )
+    
+class InvaCogni_2TBnoimg(nn.Module):
+    def __init__(self, config, text_encoder=None,
+                 audio_encoder=None):
+        super().__init__()
+        self.config = config # if use PretrainedMoDel as parent class then
+                            # don't have to do this
+
+        self.gender_GRL = InvaCogniGRL(config)
+        self.language_GRL = InvaCogniGRL(config)
+        self.text_encoder = InvaCogniTextEncoder(config, text_encoder)
+        self.audio_encoder = InvacogniAudioEncoder(config, audio_encoder)
+
+        self.gender_domain_classifier = InvaCogniFFN(config, config.gender_domain_classifier_FFN)
+        self.language_domain_classifier = InvaCogniFFN(config, config.language_domain_classifier_FFN)
+        self.task_classifier = InvaCogniFFN(config, config.task_classifier_FFN)
+        
+        self.cross_attn2 = InvaCogniAttention2(attention_dropout=config.attention_dropout,
+                                               num_attention_heads=config.num_attention_heads,
+                                               qdim=512, kdim=768, vdim=768, projdim=512, 
+                                               out_features_projvdim=512,
+                                               out_features_projoutdim=512,)
+        
+        self.cross_attn_layer_norm2 = nn.LayerNorm(normalized_shape=512)
+        self.cross_attn_FFN2 = InvaCogniFFN(config, [[512, 3072], 'gelu', 'dropout-0.5', [3072, 512], 'gelu'])
+        self.cross_attn_FFN_layer_norm2 = nn.LayerNorm(normalized_shape=512)
+
+    def gender_domain_classify(self, inp):
+        #print("dc gennnnnnnnnnnnn")
+        return self.gender_domain_classifier(self.gender_GRL(inp))
+    
+    def language_domain_classify(self, inp):
+        #print("dc langgggggggggggg")
+        return self.language_domain_classifier(self.language_GRL(inp))
+
+    def task_classify(self, input_ids_out,
+                      audio_out,
+                      input_ids_attention_mask=None):
+
+        out = self.cross_attn2(k=input_ids_out.last_hidden_state,
+                               v=input_ids_out.last_hidden_state,
+                              q=audio_out.last_hidden_state,
+                              key_attention_mask=input_ids_attention_mask)
+        
+        out = self.cross_attn_layer_norm2(out + audio_out.last_hidden_state)
+        out3 = self.cross_attn_FFN2(out)
+        out3 = self.cross_attn_FFN_layer_norm2(out+out3)
+        out3 = out3.mean(dim=1)
+
+        return out3, self.task_classifier(out3)
+
+    def forward(self, input_ids, audio,
+                input_ids_attention_mask=None,
+                gender_dc_labels=None,
+                language_dc_labels=None,
+                labels=None,
+                return_dict=True,
+                  **kwargs):
+
+        audio_out = self.audio_encoder(audio, return_dict=True)
+
+        input_ids_out = self.text_encoder(input_ids, input_ids_attention_mask)
+
+
+        all_fused, tc_logits = self.task_classify(input_ids_out,
+                                       audio_out,
+                                       input_ids_attention_mask)
+        
+        gender_dc_logits = None
+        if gender_dc_labels is not None and gender_dc_labels.dim() > 1: # if training and or given gender_dc_labels(for evaluation)
+            gender_dc_logits = self.gender_domain_classify(all_fused)
+
+        language_dc_logits = None
+        if language_dc_labels is not None and language_dc_labels.dim() > 1:
+            language_dc_logits = self.language_domain_classify(all_fused)
+
+        
+        gender_dc_loss = torch.tensor(0, device=tc_logits.device)
+        language_dc_loss = torch.tensor(0, device=tc_logits.device)
+        total_loss = None
+        tc_loss = torch.tensor(0, device=tc_logits.device)
+        if gender_dc_labels is not None and self.training and gender_dc_labels.dim() > 1:
+            gender_dc_loss = F.binary_cross_entropy_with_logits(gender_dc_logits, gender_dc_labels)
+
+        if language_dc_labels is not None and self.training and language_dc_labels.dim() > 1:
+            language_dc_loss = F.binary_cross_entropy_with_logits(language_dc_logits, language_dc_labels)
+            
+        if labels is not None:
+            #tc_loss = F.binary_cross_entropy_with_logits(tc_logits, labels)
+            tc_loss = F.cross_entropy(tc_logits, labels.squeeze(-1).long())
+
+        if gender_dc_labels is not None or labels is not None or language_dc_labels is not None:
+            total_loss = tc_loss + self.config.loss_lambda*gender_dc_loss + self.config.loss_lambda*language_dc_loss
+
+        language_dc_loss = None if language_dc_logits is None else language_dc_loss
+        gender_dc_loss = None if gender_dc_logits is None else gender_dc_loss
+
+        if not return_dict:
+            output = (tc_logits, tc_loss, gender_dc_logits, gender_dc_loss, language_dc_logits, language_dc_loss)
+            return ((total_loss,) + output) if total_loss is not None else output
+        
+        return InvaCogniClassifierOutput(
+            loss=total_loss,
+            logits=tc_logits,
+            #hidden_states=None,
+            #attentions=None,
+            gender_dc_logits=gender_dc_logits,
+            gender_dc_loss=gender_dc_loss,
+            language_dc_logits=language_dc_logits,
+            language_dc_loss=language_dc_loss,
+            tc_loss=tc_loss,
+        )
+
+
+
+class whisper_baseline(nn.Module):
+    def __init__(self, config, vision_encoder=None, text_encoder=None,
+                 audio_encoder=None):
+        super().__init__()
+        self.config = config # if use PretrainedMoDel as parent class then
+                            # don't have to do this
+
+        self.gender_GRL = InvaCogniGRL(config)
+        self.language_GRL = InvaCogniGRL(config)
+        self.audio_encoder = InvacogniAudioEncoder(config, audio_encoder)
+        self.text_encoder = InvaCogniTextEncoder(config, text_encoder)
+
+        self.gender_domain_classifier = InvaCogniFFN(config, config.gender_domain_classifier_FFN)
+        self.language_domain_classifier = InvaCogniFFN(config, config.language_domain_classifier_FFN)
+        self.task_classifier = InvaCogniFFN(config, config.task_classifier_FFN)
+        
+
+    def gender_domain_classify(self, inp):
+        return self.gender_domain_classifier(self.gender_GRL(inp))
+    
+    def language_domain_classify(self, inp):
+        return self.language_domain_classifier(self.language_GRL(inp))
+
+    def task_classify(self,
+                      audio_out,):
+
+        return self.task_classifier(audio_out.last_hidden_state.mean(dim=1))
+
+    def forward(self, input_ids, audio,
+                input_ids_attention_mask=None,
+                gender_dc_labels=None,
+                language_dc_labels=None,
+                labels=None,
+                return_dict=True,
+                  **kwargs):
+
+        audio_out = self.audio_encoder(audio, return_dict=True)
+
+
+        tc_logits = self.task_classify(audio_out,)
+        
+        gender_dc_logits = None
+        if gender_dc_labels is not None and gender_dc_labels.dim() > 1: # if training and or given gender_dc_labels(for evaluation)
+            gender_dc_logits = self.gender_domain_classify(audio_out.last_hidden_state.mean(dim=1))
+
+        language_dc_logits = None
+        if language_dc_labels is not None and language_dc_labels.dim() > 1:
+            language_dc_logits = self.language_domain_classify(audio_out.last_hidden_state.mean(dim=1))
+
+        
+        gender_dc_loss = torch.tensor(0, device=tc_logits.device)
+        language_dc_loss = torch.tensor(0, device=tc_logits.device)
+        total_loss = None
+        tc_loss = torch.tensor(0, device=tc_logits.device)
+        if gender_dc_labels is not None and self.training and gender_dc_labels.dim() > 1:
+            gender_dc_loss = F.binary_cross_entropy_with_logits(gender_dc_logits, gender_dc_labels)
+
+        if language_dc_labels is not None and self.training and language_dc_labels.dim() > 1:
+            language_dc_loss = F.binary_cross_entropy_with_logits(language_dc_logits, language_dc_labels)
+            
+        if labels is not None:
+            #tc_loss = F.binary_cross_entropy_with_logits(tc_logits, labels)
+            tc_loss = F.cross_entropy(tc_logits, labels.squeeze(-1).long())
 
         if gender_dc_labels is not None or labels is not None or language_dc_labels is not None:
             total_loss = tc_loss + self.config.loss_lambda*gender_dc_loss + self.config.loss_lambda*language_dc_loss
